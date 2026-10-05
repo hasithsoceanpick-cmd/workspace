@@ -49,9 +49,16 @@ tests/db/          database isolation tests (see tests/README.md).
    Notifications go through `public.notify(...)` with the department and app key.
 7. **Never add a way to grant admin from the app**, and never weaken a policy to
    make something work — fix the query or the trigger instead.
-8. **SQL files must stay re-runnable** (`create table if not exists`,
+8. **References to `profiles`:** personal data → `on delete cascade`; history columns
+   (created_by, author, actor) → `on delete set null`; ownership of live work (assignee) →
+   leave as restrict so the admin can't delete someone who still has work. BEFORE UPDATE
+   triggers that pin columns must let the database's own clean-up through
+   (`if pg_trigger_depth() > 1 then return new; end if;`).
+9. **Changes to a live database** go in `supabase/updates/NNN_name.sql` (re-runnable), and the
+   same change goes into the numbered setup files so fresh installs match.
+10. **SQL files must stay re-runnable** (`create table if not exists`,
    `create or replace function`, `drop policy if exists` before `create policy`).
-9. Run the database tests (tests/README.md) after any SQL change, and add a test
+11. Run the database tests (tests/README.md) after any SQL change, and add a test
    for each new table proving another department can't read or write it.
 
 ## Adding a new app
