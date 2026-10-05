@@ -38,6 +38,20 @@ function Gate({ userId }: { userId: string }) {
   if (state === undefined) return <div className="splash">Loading…</div>;
   const { me, isAdmin } = state;
   const ready = me && me.active && (isAdmin || me.department_id);
+  if (!me) {
+    return (
+      <div className="auth-wrap">
+        <div className="auth-card">
+          <div className="brand-mark big">✓</div>
+          <h1>No access</h1>
+          <p className="muted">This login has been removed by the administrator. Contact them if you think this is a mistake.</p>
+          <div className="row gap">
+            <button className="btn primary" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!ready) {
     return (
       <div className="auth-wrap">
@@ -45,8 +59,7 @@ function Gate({ userId }: { userId: string }) {
           <div className="brand-mark big">✓</div>
           <h1>Waiting for approval</h1>
           <p className="muted">
-            {me ? <>Hi {me.full_name}. </> : null}
-            Your account is set up. The administrator needs to approve it and add you to your department.
+            Hi {me.full_name}. Your account is set up. The administrator needs to approve it and add you to your department.
           </p>
           <div className="row gap">
             <button className="btn primary" onClick={load}>Check again</button>

@@ -393,6 +393,7 @@ select { padding-right: 6px; cursor: pointer; }
 .person-link { display: flex; flex-direction: column; align-items: flex-start; border: 0; background: none; padding: 0; cursor: pointer; text-align: left; }
 button.person-cell.person-link { flex-direction: row; align-items: center; }
 .inactive-row td { opacity: .55; }
+.confirm-inline { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
 .team-table select { height: 30px; font-size: 13px; }
 
 /* ============ Admin: departments ============ */
