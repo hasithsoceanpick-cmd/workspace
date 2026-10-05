@@ -21,6 +21,13 @@ export default function PeoplePage({ params }: { params: Params }) {
     if (msg) toast(msg);
   }
 
+  async function remove(p: Profile, msg: string) {
+    const { error } = await supabase.rpc('admin_delete_user', { p_user: p.id });
+    if (error) return fail(error);
+    await reload();
+    toast(msg);
+  }
+
   const waiting = profiles.filter(p => !p.active && !p.department_id);
   const rest = profiles
     .filter(p => !waiting.includes(p))
@@ -50,7 +57,11 @@ export default function PeoplePage({ params }: { params: Params }) {
         <section className="card approvals">
           <h2>Waiting for approval <span className="count">{waiting.length}</span></h2>
           {departments.length === 0 && <p className="muted small">Create a department first (Departments &amp; apps tab).</p>}
-          {waiting.map(p => <ApproveRow key={p.id} p={p} onApprove={(patch) => update(p, patch, `${p.full_name} approved`)} />)}
+          {waiting.map(p => (
+            <ApproveRow key={p.id} p={p}
+              onApprove={(patch) => update(p, patch, `${p.full_name} approved`)}
+              onDecline={() => remove(p, `${p.full_name}'s sign-up declined`)} />
+          ))}
         </section>
       )}
 
@@ -63,6 +74,7 @@ export default function PeoplePage({ params }: { params: Params }) {
               <th>Role</th>
               <th>Status</th>
               <th>Joined</th>
+              <th />
             </tr>
           </thead>
           <tbody>
@@ -104,6 +116,12 @@ export default function PeoplePage({ params }: { params: Params }) {
                   )}
                 </td>
                 <td className="muted small">{fmtStamp(p.created_at)}</td>
+                <td>
+                  {p.id !== me.id && (
+                    <ConfirmButton label="Delete" question={`Delete ${p.full_name}'s login?`}
+                      onConfirm={() => remove(p, `${p.full_name} deleted`)} />
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -111,13 +129,14 @@ export default function PeoplePage({ params }: { params: Params }) {
       </div>
       <p className="hint">
         Changes apply immediately. Moving someone to another department removes their access to the old department's data.
+        Someone leaving? Deactivate keeps their history. Delete removes the login completely and only works once nothing is assigned to them.
         Click an avatar to change that person's calendar colour.
       </p>
     </div>
   );
 }
 
-function ApproveRow({ p, onApprove }: { p: Profile; onApprove: (patch: Patch) => void }) {
+function ApproveRow({ p, onApprove, onDecline }: { p: Profile; onApprove: (patch: Patch) => void; onDecline: () => void }) {
   const { departments } = usePlatform();
   const [dept, setDept] = useState('');
   const [role, setRole] = useState<Role>('member');
@@ -138,7 +157,23 @@ function ApproveRow({ p, onApprove }: { p: Profile; onApprove: (patch: Patch) =>
       <button className="btn primary sm" disabled={!dept} onClick={() => onApprove({ active: true, department_id: dept, role })}>
         Approve
       </button>
+      <ConfirmButton label="Decline" question="Decline and delete this sign-up?" onConfirm={onDecline} />
     </div>
+  );
+}
+
+/** A small link that asks "Are you sure?" in place before doing something permanent. */
+function ConfirmButton({ label, question, onConfirm }: { label: string; question: string; onConfirm: () => void }) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) {
+    return <button className="link danger small" onClick={() => setAsking(true)}>{label}</button>;
+  }
+  return (
+    <span className="confirm-inline">
+      <span className="small">{question}</span>
+      <button className="btn danger sm" onClick={() => { setAsking(false); onConfirm(); }}>Yes, {label.toLowerCase()}</button>
+      <button className="btn sm" onClick={() => setAsking(false)}>Cancel</button>
+    </span>
   );
 }
 
