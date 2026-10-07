@@ -1,0 +1,207 @@
+# Workspace — handoff notes
+
+Everything someone (a person or Claude in another account) needs to carry on with
+this app without the original chat. Read this first, then `CLAUDE.md` (the rules for
+changing the code) and `README.md` (setup and admin guide).
+
+Last updated: 6 October 2026.
+
+---
+
+## 1. What this is
+
+**Workspace** is a small internal web app for Hasith, a finance manager, and his
+organisation. One website, several **departments**, each fully private from the others.
+Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes**.
+
+- Hasith is the only **platform admin**. It is his normal login (also Finance's Manager).
+  Only he can switch departments, approve sign-ups, and turn apps on per department or per person.
+- Roles inside a department: **Manager → Senior Executive → Member**.
+- Stack: React 19 + Vite 7 + TypeScript (no UI library) on **Vercel**; **Supabase** for logins,
+  Postgres with row-level security, file storage and the daily cron job. Free tiers.
+- Hasith does not code. He deploys by uploading files to GitHub in the browser and pasting
+  SQL into the Supabase SQL Editor. Everything must be handed to him click-by-click.
+
+## 2. Where it lives (his accounts)
+
+| Piece | Where | Notes |
+|---|---|---|
+| Code | GitHub, private repo **workspace** | Uploaded through the GitHub website (no git on his PC) |
+| Website | Vercel project **workspace** (team *OP-Finance*) | Builds automatically on every GitHub change |
+| Database, logins, files | Supabase project **workspace**, region Singapore | Email confirmation is **off** |
+| Vercel environment variables | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Values from Supabase → Connect. (He once typed the URL into the Key box; the *Key* is the variable name.) |
+| Morning alerts | Supabase pg_cron job `workspace-daily-check` | `30 1 * * *` UTC = 07:00 Colombo |
+| Time zone | `Asia/Colombo` | `app_tz()` in `01_platform.sql`; dates are `YYYY-MM-DD` strings |
+
+## 3. State at handoff — check these first
+
+1. **Database.** Steps 01–04 and update `001_delete_people.sql` were run on the live database.
+   His first attempt at **U2** (`002_helpers_checklist_files_today_notes.sql`) failed with
+   `foreign key constraint "note_shares_note_id_fkey" cannot be implemented … bigint and uuid`:
+   the live project already holds a **`notes` table with uuid ids from an older app**. Supabase
+   rolled the whole script back. U2 was then rebuilt so every Notes object is named `notes_*`
+   (`notes_pages`, `notes_shares`, `notes_files`, `notes_task_links`) and files use a new bucket
+   `workspace-files`; it never touches the old table. It ends with a read-only report of anything
+   in the database that isn't Workspace's. To check U2 has run:
+   `select to_regclass('public.notes_pages');` → not null means done.
+   Leave the old `notes` table (and any old `attachments` bucket) alone unless he decides otherwise.
+2. **Code on GitHub.** An earlier upload put 48 copies of files loose at the top level of the repo
+   (folders flattened); the site kept building from the older `src/` folder. Those loose files are
+   harmless — the build only reads `src/`, `index.html` and the config files — so he was told to
+   **leave them** and simply upload this project on top, folders kept (tested: builds fine with them
+   present). Upload = Add file → Upload files → drag everything from the extracted folder (dragging
+   keeps folders; the file picker flattens them) → check paths like `src/apps/notes/…` → Commit.
+   Cleaning up the loose files is optional and can wait.
+3. **Notes** must be switched on by him: Admin console → Departments & apps → tick Notes
+   (everyone, or only selected people). New departments get Tasks only.
+4. The copy-paste SQL page (an Artifact in his old Claude account) can be rebuilt with
+   `python3 tools/sql-page/build.py` and published again (see §8).
+
+## 4. Everything he asked for (and the decisions made)
+
+### Platform
+- Multi-department. Department-specific work must **never leak** into another department,
+  now or in future builds. Enforced in the database (RLS) and by the rules in `CLAUDE.md`.
+- One admin login (his) that alone moves between departments. No manager gets it.
+  Admin rights are set only in SQL (`platform_admins`); the first sign-up becomes admin.
+- Only he approves sign-ups and picks their department + role. He can **decline** pending
+  sign-ups and **delete** logins (refused while the person still has tasks assigned;
+  **Deactivate** keeps history instead).
+- Future apps appear in an app dropdown. **He chooses which departments and which people**
+  get each app.
+- In-app bell notifications only (no email).
+
+### Tasks app
+- Managers see and assign to everyone in the department; Senior Executives see/assign their own
+  and Members' work; Members see their own.
+- Deadlines, status (To do / Doing / Waiting / Done), priority, notes, comments, history.
+- **Assignees can move their own deadline**; the assigner is notified.
+- Alerts: assigned, deadline moved, deadline missed (07:00 daily check, also run when the app
+  opens), due today, completed, waiting, comments, added as helper.
+- Calendar: month view, and week view as people × days. Leads filter by person. Drag to move
+  a deadline, or into another person's row to hand it over.
+- **Day review**: any date, who did what (completed, started, moved, commented, missed).
+- **Team** page: workload per person.
+- **Today** (first tab, opens by default): time-blocking timeline **07:00–20:30**, 30-minute rows,
+  15-minute snapping. Drag tasks in (or press +, which uses the next free hour), click an empty
+  slot to add an own block such as "Lunch", drag to move, pull the bottom edge to resize, ✕ to remove,
+  double-click own block to rename. Any day can be opened (plan ahead or look back). Leads can pick
+  a person and view their day **read-only**; only the owner edits.
+- **Helpers** (collaborative tasks): one owner + helpers. **Only Managers and Senior Executives add
+  or remove helpers** (seniors: themselves or Members; managers/admin: anyone in the department).
+  Helpers see the task under *Helping on*, on their calendar (dashed) and on Today; they get the
+  task's alerts (comments, deadline moved/missed, done). Helpers can comment, tick checklist steps
+  and add files/links. Helpers **cannot mark done** (his explicit decision) and cannot move the deadline.
+- **Sub-tasks = a checklist inside the task**, progress shown (e.g. 3/5). Anyone on the task can tick.
+- **Screenshots, files and links** on task details (not on comments). Ctrl+V pastes a screenshot
+  anywhere in the task panel. **10 MB per file.** Private storage.
+
+### Notes app
+- Its own app in the dropdown; admin enables it per department / person.
+- Pages and **sub-pages**; headings, bullets, numbered lists, **tickboxes**, simple **tables**,
+  links, pasted **screenshots**, attached files, and **links to tasks** (from either side).
+- Pages are **Private** until the owner shares with the **whole department** or **chosen people**,
+  each as *can view* or *can edit*. Sub-pages follow their top-level page.
+- **Admin can read every page, including private ones** (read-only unless it's his own).
+  The label shown is just **"Private"** — he asked that it not mention the admin.
+- Autosave. If two people edit at once, the later save is refused and that person chooses
+  "Show their version" or "Keep mine" (no live co-editing).
+
+### Department-only features
+- `daily_notes` (end-of-day note per person, shown in Day review) is the worked example of a
+  feature switched on for one department only.
+
+## 5. How the code is organised
+
+See `CLAUDE.md` for the full rules. In short:
+
+```
+src/platform/   shell, login, app dropdown, admin department switcher, bell, files.ts, slots.ts, registry.ts
+src/apps/tasks/ Today, list, calendar, day review, team; TaskDrawer, Checklist, TaskFiles, store
+src/apps/notes/ page tree, NotePage, TipTap Editor, ShareDialog, NoteFiles, LinkedTasks, LinkedNotesPanel
+src/apps/admin/ People (approve/decline/delete/roles) and Departments & apps
+src/features/   department-only features (daily-notes)
+supabase/       01–05 setup files, updates/NNN, templates/, 00_reset.sql (wipes data!)
+tests/db/       database security tests (163 checks)
+tests/e2e/      browser tests + a local stand-in for Supabase
+tools/sql-page/ builds the copy-paste SQL page for Hasith
+```
+
+Key technical points (all in `CLAUDE.md` too):
+- Every data row has `department_id`, set by a BEFORE trigger, never from the browser.
+- Policies: `is_admin() or (department_id = my_dept() and <app access>)`.
+- BEFORE UPDATE triggers that pin columns start with `if pg_trigger_depth() > 1 then return new;`
+  so foreign-key clean-up (on delete set null) still works.
+- Notes access is decided from the row's own columns (`notes_access_row`) because a policy checked
+  on `INSERT … RETURNING` can't see the new row through a lookup.
+- `notes.updated_at` only changes when the title or content changes (sharing changes don't count),
+  which is what the edit-conflict check relies on.
+- Files: bucket `workspace-files` (private, 10 MB limit), paths `tasks/<id>/…` and `notes/<id>/…`,
+  access via `tasks_file_ok` / `notes_file_ok`. Delete files **before** deleting the record.
+- The Notes editor (TipTap 3) is lazy-loaded so the main bundle stays small.
+- Links only allow `http(s)://` and `mailto:`.
+
+## 6. How to work with Hasith
+
+- He is not a developer. Give **numbered, click-by-click steps** with the exact button names
+  (Supabase: SQL Editor → New query → paste → Run; GitHub: press "." → drag files → Commit & Push).
+- SQL is delivered as a **copy-paste page with a Copy button per script** (he asked for "sql pages
+  to copy paste" and said **"no text files"** when SQL was dumped into the chat).
+  Tell him what result to expect ("Success. No rows returned").
+- Only ever ask him to run the **one update script** that's new. Never `00_reset.sql` on the live
+  system (it deletes all data); it exists only for broken or brand-new setups.
+- He troubleshoots by sending screenshots; answer what the screenshot shows, briefly.
+- Before building a new feature round he likes to be asked clarifying questions until the
+  requirement is "crystal clear", then he answers in short form (e.g. "1. helpers can't mark done
+  2. no, just private 3. timeline is 700-2030").
+- Keep replies short and plain. His general preferences: concise; emails short, polite,
+  professional, no signature; Excel work with simple formulas.
+- **Never push to his GitHub repo or change his live systems yourself** unless he explicitly asks
+  for that in so many words. Hand him the files and the steps.
+
+## 7. Release checklist (how every change so far was shipped)
+
+1. Build the feature following `CLAUDE.md`.
+2. Database change → new re-runnable `supabase/updates/NNN_name.sql` **and** the same change in the
+   numbered setup files (fresh installs must match).
+3. Run `tests/db/run.sh` and `tests/e2e/run.sh` against a throwaway local Postgres (never Supabase).
+   Also test the update on a copy of the live schema: load the previous setup files + earlier
+   updates, add some data, run the new update twice, check the data survived.
+4. `npm run build` must pass (Vercel runs the same command).
+5. Update README (updates table, feature list) and this file.
+6. Rebuild the SQL page (`tools/sql-page/build.py`: new update in `steps_update` with
+   `badge='now'`, previous one moved to `steps_done`) and publish it.
+7. Zip the project (without `node_modules`, `dist`, `.env*`), send it, and give him the 3–4 steps:
+   run the update SQL → upload code via github.dev → wait a minute → switch anything new on in Admin.
+
+## 8. Testing
+
+- `tests/db/run.sh` — 74 isolation + 89 feature checks on a local Postgres with a stand-in for
+  Supabase's `auth` and `storage` schemas.
+- `tests/e2e/run.sh` — builds the app against `tests/e2e/mock-supabase.mjs` (auth, REST subset,
+  storage with real RLS), seeds a Finance + HR demo (`*@demo.lk` / `password1`) and drives Chrome
+  through every feature. At handoff all 138 browser checks pass (run from a clean copy of this package).
+- Local Postgres used during development: Postgres 16 on port 54322, user `postgres`.
+
+## 9. Known limits and ideas not built
+
+- No live co-editing in Notes (conflicts are caught instead). No version history.
+- Dragging tasks from the Today list doesn't work on phones (use **+**); blocks can be moved by touch.
+- Images removed from a note's text stay in storage until the page is deleted.
+- Copying an image from one page into another: people who can't open the first page can't see it.
+- Notes search is by page title only.
+- No email notifications; no export to Excel; no recurring tasks; no file previews beyond images.
+- Earlier, separate project (not this app): a single-file HTML + Supabase task app on Netlify
+  ("hasith-finance") for his finance team. Don't mix the two; this one replaced it as the new build.
+
+## 10. Moving the hosting accounts too (only if needed)
+
+The app itself doesn't live in Claude; it lives in his GitHub, Vercel and Supabase accounts and
+keeps running regardless of which Claude account he uses. Only if those accounts change:
+- **GitHub**: Settings → Transfer ownership (or upload this folder to a new private repo).
+- **Vercel**: in the new account, Add New → Project → import the repo → add the two environment
+  variables → Deploy.
+- **Supabase**: either transfer the project to the new organisation (Project Settings → General →
+  Transfer project), which keeps logins, data and files; or create a new project, run setup files
+  1–5, and migrate data with `pg_dump`/`pg_restore` (logins live in `auth.users`, files in storage —
+  both need moving, so prefer the transfer). Update Vercel's two variables if the project changes.

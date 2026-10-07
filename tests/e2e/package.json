@@ -1,0 +1,11 @@
+{
+  "name": "workspace-e2e",
+  "private": true,
+  "description": "Browser tests for Workspace against a local stand-in for Supabase",
+  "type": "module",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "busboy": "^1.6.0",
+    "pg": "^8.23.1"
+  }
+}

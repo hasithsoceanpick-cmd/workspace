@@ -185,6 +185,43 @@ ok(!!(await as(null, 'select * from tasks')).error && !!(await as(null, 'select 
 r = await as(K, `select public.notify(array[$1::uuid], null, null, null, 'x', 'spam', null)`, [H]);
 ok(!!r.error, 'internal notify() not callable');
 
+
+console.log('Removing people (decline / delete)');
+const exists = async (id) => (await su('select (select count(*) from auth.users where id=$1)::int a, (select count(*) from profiles where id=$1)::int p', [id]))[0];
+r = await as(P, `select public.admin_delete_user($1)`, [R]);
+ok(!!r.error && (await exists(R)).a === 1, 'a manager cannot delete people');
+r = await as(K, `select public.admin_delete_user($1)`, [R]);
+ok(!!r.error, 'a member cannot delete people');
+r = await as(H, `select public.admin_delete_user($1)`, [H]);
+ok(/own account/.test(r.error || ''), 'admin cannot delete their own account');
+const H2 = await signup('second.admin@x.lk', 'Second Admin');
+await su('insert into platform_admins (user_id) values ($1)', [H2]);
+r = await as(H, `select public.admin_delete_user($1)`, [H2]);
+ok(/SQL Editor/.test(r.error || '') && (await exists(H2)).a === 1, 'another admin cannot be deleted from the app');
+await su('delete from platform_admins where user_id=$1', [H2]); await su('delete from auth.users where id=$1', [H2]);
+r = await as(H, `select public.admin_delete_user($1)`, [R]);
+let e = await exists(R);
+ok(!r.error && e.a === 0 && e.p === 0, 'admin declines a pending sign-up: login and profile removed');
+r = await as(H, `select public.admin_delete_user($1)`, [K]);
+e = await exists(K);
+ok(/still has tasks assigned/.test(r.error || '') && e.a === 1 && e.p === 1, 'cannot delete someone who still has tasks assigned');
+// someone who created work, commented and wrote notes, but has nothing assigned any more
+const Z = await signup('zara@x.lk', 'Zara');
+await as(H, `update profiles set department_id=$1, role='member', active=true where id=$2`, [FIN, Z]);
+const tz = (await as(Z, `insert into tasks (title, assignee_id, due_date) values ('Zara draft', $1, $2) returning id`, [Z, day(3)])).rows[0].id;
+await as(Z, `insert into task_comments (task_id, body) values ($1, 'Started this')`, [tz]);
+await as(Z, `insert into daily_notes (day, body) values ($1, 'note')`, [day(0)]);
+await as(H, `update tasks set assignee_id=$2 where id=$1`, [tz, K]);
+r = await as(H, `select public.admin_delete_user($1)`, [Z]);
+e = await exists(Z);
+ok(!r.error && e.a === 0 && e.p === 0, 'admin deletes someone with no tasks assigned ' + (r.error || ''));
+const t = (await su('select created_by, assignee_id from tasks where id=$1', [tz]))[0];
+ok(t.created_by === null && t.assignee_id === K, 'their task stays, creator shown as blank');
+ok((await su('select author_id from task_comments where task_id=$1', [tz]))[0]?.author_id === null, 'their comment stays, author shown as blank');
+ok((await su('select count(*)::int n from task_activity where actor_id=$1', [Z]))[0].n === 0 && (await su('select count(*)::int n from task_activity where task_id=$1', [tz]))[0].n >= 3, 'history kept, their name removed');
+ok((await su('select count(*)::int n from daily_notes where user_id=$1', [Z]))[0].n === 0, 'their personal notes are removed');
+ok((await as(K, 'select id from tasks where id=$1', [tz])).rows.length === 1, 'the reassigned task still works for its new owner');
+
 console.log(`\n${pass} passed, ${fail} failed`);
 await pool.end();
 process.exit(fail ? 1 : 0);

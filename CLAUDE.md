@@ -2,17 +2,23 @@
 
 Read this before making any change. It exists so that work done for one
 department never leaks into another, and so new apps slot in cleanly.
+**New here? Read `HANDOFF.md` first** — who the app is for, what's live, every decision
+made so far, and how to ship changes to Hasith (who doesn't code).
 
 ## How it's built
 
 ```
 src/platform/      shared shell: sign-in, app dropdown, admin-only department switcher,
                    notifications bell, user menu. Knows nothing about any department.
-src/apps/<key>/    one folder per app (today: tasks, admin). Default export = the app.
+src/apps/<key>/    one folder per app (today: tasks, notes, admin). Default export = the app.
+src/platform/slots.ts  places where one app shows a panel inside another (e.g. Notes inside a task).
+src/platform/files.ts  upload / open / delete files in the private "workspace-files" bucket.
 src/features/<key>/ department-only features. Registered in src/features/registry.ts.
 supabase/          numbered SQL files, run in order in the Supabase SQL Editor.
 supabase/templates/ copy these for a new app or a new department feature.
 tests/db/          database isolation tests (see tests/README.md).
+tests/e2e/         browser tests against a local stand-in for Supabase (see tests/e2e/README.md).
+tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supabase.
 ```
 
 - One Supabase project, one website. Every department's data sits in the same
@@ -47,6 +53,9 @@ tests/db/          database isolation tests (see tests/README.md).
    department), then use it from the feature module.
 6. **Apps don't import each other.** They talk to the platform only via `usePlatform()`.
    Notifications go through `public.notify(...)` with the department and app key.
+   When an app needs to show something inside another app, register a component in
+   `src/platform/slots.ts`; it only appears for people who have that app. Keep slot components
+   small (no heavy libraries): they load with the main bundle.
 7. **Never add a way to grant admin from the app**, and never weaken a policy to
    make something work — fix the query or the trigger instead.
 8. **References to `profiles`:** personal data → `on delete cascade`; history columns
@@ -60,6 +69,21 @@ tests/db/          database isolation tests (see tests/README.md).
    `create or replace function`, `drop policy if exists` before `create policy`).
 11. Run the database tests (tests/README.md) after any SQL change, and add a test
    for each new table proving another department can't read or write it.
+12. **Files** live in the private bucket `workspace-files` under `<app>/<record id>/…`. Storage policies
+   decide access from that path with a security-definer function (`tasks_file_ok`, `notes_file_ok`).
+   Delete the stored files *before* deleting their record: once the record is gone nobody may touch
+   its folder any more. 10 MB per file (bucket limit + checked in the browser).
+13. **Policies that must pass on `INSERT … RETURNING`** can't look the new row up by id inside a
+   STABLE function (it can't see it yet). Decide access from the row's own columns instead
+   (see `notes_access_row` in 05_app_notes.sql).
+14. **Never change the live systems yourself** (his GitHub repo, Vercel, Supabase) unless he
+   explicitly asks for that. Hand him files and click-by-click steps instead.
+15. **Name every table, function, trigger and index after its app** (`tasks`, `task_*`,
+   `notes_*`, `<key>_*`). The live Supabase project also holds tables from an older app (for
+   example a `notes` table with uuid ids) — `create table if not exists` silently skips an
+   existing table, and `create or replace function` would overwrite someone else's function.
+   Never alter, drop or add policies to tables this app didn't create. Update 002 ends with a
+   report listing anything in the database that isn't Workspace's.
 
 ## Adding a new app
 
@@ -67,7 +91,9 @@ tests/db/          database isolation tests (see tests/README.md).
 2. Create `src/apps/<key>/index.tsx` (default export receives `{ page, params }`).
    Use `usePlatform()` for `me`, `dept`, `deptPeople`, `userHasApp`, `toast`.
    Always filter queries by `.eq('department_id', dept.id)` (the admin can read all).
-3. Add it to `APPS` in `src/platform/registry.ts`.
+3. Add it to `APPS` in `src/platform/registry.ts` (`refParam` = the URL parameter that opens one
+   item from a notification; `defaultOn` only for apps every new department should get;
+   wrap large apps in `lazy(() => import(...))` so they download only when opened).
 4. Admin console → Departments & apps → switch it on (everyone or selected people).
 
 ## Adding a department-only feature

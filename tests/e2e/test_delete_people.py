@@ -1,0 +1,60 @@
+import os
+_HERE = os.path.dirname(os.path.abspath(__file__))
+os.makedirs(os.path.join(_HERE, 'shots'), exist_ok=True)
+import asyncio
+from playwright.async_api import async_playwright
+BASE = os.environ.get('APP_URL', 'http://localhost:4173')
+results=[]; errors=[]
+def check(c,m): results.append(('PASS' if c else 'FAIL', m))
+async def login(b, email, pw='password1'):
+    ctx = await b.new_context(viewport={'width':1360,'height':860}, timezone_id='Asia/Colombo')
+    pg = await ctx.new_page()
+    pg.on('pageerror', lambda e: errors.append(str(e)))
+    await pg.goto(BASE); await pg.fill('input[type=email]', email); await pg.fill('input[type=password]', pw)
+    await pg.click('button:has-text("Sign in")'); await pg.wait_for_timeout(1500)
+    return pg
+async def signup(b, name, email):
+    ctx = await b.new_context(viewport={'width':1360,'height':860}, timezone_id='Asia/Colombo')
+    pg = await ctx.new_page()
+    await pg.goto(BASE); await pg.click('text=Create an account')
+    await pg.fill('label:has-text("Full name") input', name); await pg.fill('input[type=email]', email); await pg.fill('input[type=password]', 'secret123')
+    await pg.click('button:has-text("Create account")'); await pg.wait_for_timeout(1500)
+    return pg
+async def main():
+    async with async_playwright() as p:
+        b = await p.chromium.launch()
+        spam = await signup(b, 'Random Person', 'random@gmail.com')
+        check(await spam.locator('h1:has-text("Waiting for approval")').count() == 1, 'stranger signs up and waits')
+        h = await login(b, 'hasith@demo.lk')
+        await h.goto(BASE + '/#/admin/people'); await h.wait_for_timeout(900)
+        row = h.locator('.approve-row:has-text("Random Person")')
+        await row.locator('button:has-text("Decline")').click(); await h.wait_for_timeout(200)
+        await h.screenshot(path=os.path.join(_HERE, 'shots', 'd1_decline_confirm.png'))
+        await row.locator('button:has-text("Yes, decline")').click(); await h.wait_for_timeout(1000)
+        check(await h.locator('.approve-row:has-text("Random Person")').count() == 0, 'Decline removes the sign-up from the list')
+        await spam.reload(); await spam.wait_for_timeout(1500)
+        txt = await spam.locator('body').inner_text()
+        check('No access' in txt or 'Sign in' in txt, f'declined person loses access ({txt[:40]!r})')
+        # delete someone who still has tasks -> refused
+        krow = h.locator('tr:has-text("Kasun Silva")')
+        await krow.locator('button:has-text("Delete")').click(); await krow.locator('button:has-text("Yes, delete")').click(); await h.wait_for_timeout(1000)
+        toast = await h.locator('.toasts').inner_text()
+        check('still has tasks assigned' in toast and await h.locator('tr:has-text("Kasun Silva")').count() == 1, 'deleting someone with tasks is refused with a clear message')
+        await h.screenshot(path=os.path.join(_HERE, 'shots', 'd2_delete_refused.png'))
+        # approve a new person, then delete them (no tasks)
+        tmp = await signup(b, 'Temp Tester', 'temp@demo.lk')
+        await h.reload(); await h.wait_for_timeout(1500)
+        trow = h.locator('.approve-row:has-text("Temp Tester")')
+        await trow.locator('select[aria-label="Department"]').select_option(label='HR')
+        await trow.locator('button:has-text("Approve")').click(); await h.wait_for_timeout(1000)
+        row2 = h.locator('tr:has-text("Temp Tester")')
+        await row2.locator('button:has-text("Delete")').click(); await row2.locator('button:has-text("Yes, delete")').click(); await h.wait_for_timeout(1000)
+        check(await h.locator('tr:has-text("Temp Tester")').count() == 0, 'admin deletes an approved person with no tasks')
+        check(await h.locator('tr:has-text("Hasith") button:has-text("Delete")').count() == 0, 'no Delete button on your own row')
+        # same email can sign up again later (login fully removed)
+        again = await signup(b, 'Temp Tester', 'temp@demo.lk')
+        check(await again.locator('h1:has-text("Waiting for approval")').count() == 1, 'deleted email can sign up again (login fully removed)')
+        await b.close()
+    for r in results: print(*r)
+    print('ERRORS:', errors or 'none')
+asyncio.run(main())
