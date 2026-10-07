@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useTaskApp } from './store';
 import { supabase } from '../../supabase';
 import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
@@ -7,7 +7,11 @@ import { firstName } from '../../lib/labels';
 import { daysBetween, fmtDue, fmtStamp, today } from '../../lib/dates';
 import { describe } from './activity';
 import { useFeatures } from '../../features/useFeatures';
+import { clipboardFiles } from '../../platform/files';
+import { TASK_PANELS } from '../../platform/slots';
 import Avatar from '../../platform/Avatar';
+import { TaskFiles, useTaskFiles } from './TaskFiles';
+import { Checklist, useChecklist } from './Checklist';
 
 const editable = (t: TaskDraft | Task) => ({
   title: t.title, notes: t.notes, assignee_id: t.assignee_id, priority: t.priority, due_date: t.due_date,
@@ -15,11 +19,16 @@ const editable = (t: TaskDraft | Task) => ({
 
 export default function TaskDrawer() {
   const store = useTaskApp();
-  const { drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast } = store;
+  const {
+    drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
+    helpersOf, helperOnly, helperCandidates, addHelper, removeHelper, isLead, refreshChecklist, myAppKeys, fullView,
+  } = store;
   const features = useFeatures('tasks').filter(f => f.taskPanel);
+  const panels = TASK_PANELS.filter(p => myAppKeys.includes(p.app));
   const defaultAssignee = team.some(p => p.id === me.id) ? me.id : team[0]?.id ?? '';
   const isNew = drawer?.mode === 'new';
   const task = drawer?.mode === 'edit' ? tasks.find(t => t.id === drawer.id) : undefined;
+  const readOnly = !!task && helperOnly(task);   // helpers can't change the task itself
 
   const [form, setForm] = useState<TaskDraft>(() => {
     if (drawer?.mode === 'new') {
@@ -40,7 +49,11 @@ export default function TaskDrawer() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [history, setHistory] = useState<Activity[]>([]);
   const [reply, setReply] = useState('');
+  const [newHelpers, setNewHelpers] = useState<string[]>([]);
   const titleRef = useRef<HTMLTextAreaElement>(null);
+  const files = useTaskFiles(task?.id ?? null);
+  const steps = useChecklist(task?.id ?? null, refreshChecklist);
+
   useLayoutEffect(() => {
     const el = titleRef.current;
     if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
@@ -54,7 +67,7 @@ export default function TaskDrawer() {
     ]);
     if (c.data) setComments(c.data as Comment[]);
     if (a.data) setHistory(a.data as Activity[]);
-  }, [task?.id]);
+  }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadThread(); }, [loadThread]);
 
@@ -68,16 +81,18 @@ export default function TaskDrawer() {
   if (!isNew && !task) {
     return (
       <Frame title="Task" onClose={closeDrawer}>
-        <div className="empty">This task is no longer available — it may have been deleted or moved to someone you can't see.</div>
+        <div className="empty">This task is no longer available. It may have been deleted, or moved to someone you can't see.</div>
       </Frame>
     );
   }
 
   const set = <K extends keyof TaskDraft>(k: K, v: TaskDraft[K]) => setForm(f => ({ ...f, [k]: v }));
-  const dirty = !!task && JSON.stringify(editable(form)) !== JSON.stringify(editable(task));
+  const dirty = !!task && !readOnly && JSON.stringify(editable(form)) !== JSON.stringify(editable(task));
   const assignOptions = team.some(p => p.id === form.assignee_id) || !person(form.assignee_id)
     ? team : [...team, person(form.assignee_id)!];
-  const canReassign = team.length > 1;
+  const canReassign = team.length > 1 && !readOnly;
+  const helpers = task ? helpersOf(task.id) : newHelpers;
+  const candidates = helperCandidates({ assignee_id: form.assignee_id }).filter(p => !helpers.includes(p.id));
 
   function validate(): string | null {
     if (!form.title.trim()) return 'Give the task a title.';
@@ -91,12 +106,16 @@ export default function TaskDrawer() {
     setBusy(true);
     if (isNew) {
       const t = await createTask({ ...form, title: form.title.trim() });
-      setBusy(false);
       if (t) {
+        for (const h of newHelpers.filter(h => h !== t.assignee_id)) await addHelper(t.id, h);
+        await steps.flush(t.id);
+        await files.flush(t.id);
+        refreshChecklist();
         const who = person(t.assignee_id);
         toast(t.assignee_id === me.id ? 'Task added' : `Assigned to ${firstName(who?.full_name ?? '')}`);
+        setBusy(false);
         closeDrawer();
-      }
+      } else setBusy(false);
     } else if (task) {
       const patch: Partial<TaskDraft> = {};
       (Object.keys(editable(form)) as (keyof ReturnType<typeof editable>)[]).forEach(k => {
@@ -109,6 +128,7 @@ export default function TaskDrawer() {
   }
 
   async function setStatus(s: TaskDraft['status']) {
+    if (readOnly) return;
     set('status', s);
     if (task && s !== task.status) {
       const t = await updateTask(task.id, { status: s });
@@ -129,13 +149,36 @@ export default function TaskDrawer() {
     if (await deleteTask(task.id)) { toast('Task deleted'); closeDrawer(); }
   }
 
+  async function onAddHelper(id: string) {
+    if (!id) return;
+    if (!task) return setNewHelpers(h => [...h, id]);
+    if (await addHelper(task.id, id)) { toast(`${firstName(person(id)?.full_name ?? '')} added as helper`); loadThread(); }
+  }
+  async function onRemoveHelper(id: string) {
+    if (!task) return setNewHelpers(h => h.filter(x => x !== id));
+    if (await removeHelper(task.id, id)) loadThread();
+  }
+
+  // Ctrl+V a screenshot anywhere in the panel → attached to the task
+  function onPaste(e: ClipboardEvent) {
+    const f = clipboardFiles(e);
+    if (!f.length) return;
+    e.preventDefault();
+    files.addFiles(f);
+    toast(f.length === 1 ? 'Screenshot added' : `${f.length} files added`);
+  }
+
   const onTitleKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); if (isNew) save(); } };
   const overdue = task && task.status !== 'done' && task.due_date < today();
   const creator = person(task?.created_by);
   const nameOf = (id: string | null) => person(id)?.full_name ?? 'Someone';
+  const canRemoveFile = (a: { created_by: string | null }) => a.created_by === me.id || (!!task && !readOnly);
 
   return (
-    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer}>
+    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}>
+      {readOnly && (
+        <div className="helper-banner">You're helping on this task. You can tick steps, add files and comment. {firstName(nameOf(task!.assignee_id))} marks it done.</div>
+      )}
       <textarea
         ref={titleRef}
         className="title-input"
@@ -143,20 +186,22 @@ export default function TaskDrawer() {
         placeholder="What needs to be done?"
         value={form.title}
         autoFocus={isNew}
+        readOnly={readOnly}
         onChange={e => set('title', e.target.value)}
         onKeyDown={onTitleKey}
       />
 
       <div className="seg" role="radiogroup" aria-label="Status">
         {STATUSES.map(s => (
-          <button key={s.value} type="button" className={`seg-btn s-${s.value} ${form.status === s.value ? 'on' : ''}`}
+          <button key={s.value} type="button" disabled={readOnly && form.status !== s.value}
+            className={`seg-btn s-${s.value} ${form.status === s.value ? 'on' : ''}`}
             onClick={() => setStatus(s.value)}>{s.label}</button>
         ))}
       </div>
 
       <div className="fields">
         <label className="field">
-          <span>Assigned to</span>
+          <span>Owner</span>
           {canReassign ? (
             <select value={form.assignee_id} onChange={e => set('assignee_id', e.target.value)}>
               {assignOptions.map(p => (
@@ -173,23 +218,49 @@ export default function TaskDrawer() {
           <span>Deadline {task && form.due_date === task.due_date && (
             <em className={overdue ? 'danger' : 'muted'}>· {overdue ? `${daysBetween(task.due_date, today())}d overdue` : fmtDue(task.due_date)}</em>
           )}</span>
-          <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} required />
+          <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} required disabled={readOnly} />
         </label>
         <label className="field">
           <span>Priority</span>
-          <select value={form.priority} onChange={e => set('priority', e.target.value as TaskDraft['priority'])}>
+          <select value={form.priority} onChange={e => set('priority', e.target.value as TaskDraft['priority'])} disabled={readOnly}>
             {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
         </label>
       </div>
 
+      {(helpers.length > 0 || (isLead && !readOnly)) && (
+        <div className="field">
+          <span>Helpers</span>
+          <div className="helpers">
+            {helpers.map(id => (
+              <span key={id} className="helper-chip">
+                <Avatar p={person(id)} size={20} /> {id === me.id ? 'Me' : person(id)?.full_name ?? 'Former member'}
+                {isLead && !readOnly && (task ? (fullView || person(id)?.role === 'member' || id === me.id) : true) && (
+                  <button type="button" onClick={() => onRemoveHelper(id)} aria-label={`Remove helper ${person(id)?.full_name}`}>✕</button>
+                )}
+              </span>
+            ))}
+            {isLead && !readOnly && candidates.length > 0 && (
+              <select className="helper-add" value="" onChange={e => onAddHelper(e.target.value)} aria-label="Add a helper">
+                <option value="">+ Add helper</option>
+                {candidates.map(p => <option key={p.id} value={p.id}>{p.id === me.id ? `${p.full_name} (me)` : p.full_name}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+
       <label className="field">
         <span>Notes</span>
-        <textarea rows={4} placeholder="Details, links, anything useful…" value={form.notes} onChange={e => set('notes', e.target.value)} />
+        <textarea rows={3} placeholder={readOnly ? '' : 'Details, anything useful…'} value={form.notes} readOnly={readOnly}
+          onChange={e => set('notes', e.target.value)} />
       </label>
 
+      <Checklist list={steps} />
+      <TaskFiles files={files} canRemove={canRemoveFile} />
+
       {isNew ? (
-        <div className="row gap end">
+        <div className="row gap end create-row">
           <button className="btn" onClick={closeDrawer}>Cancel</button>
           <button className="btn primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Create task'}</button>
         </div>
@@ -209,6 +280,10 @@ export default function TaskDrawer() {
             {task!.completed_at && <> · completed {fmtStamp(task!.completed_at)}</>}
           </div>
 
+          {panels.map(p => {
+            const Panel = p.component;
+            return <div key={p.app} className="feature-slot"><Panel task={task!} /></div>;
+          })}
           {features.map(f => {
             const Panel = f.taskPanel!;
             return <div key={f.key} className="feature-slot"><Panel task={task!} /></div>;
@@ -273,11 +348,13 @@ export default function TaskDrawer() {
   );
 }
 
-function Frame({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+function Frame({ title, onClose, children, onPaste }: {
+  title: string; onClose: () => void; children: ReactNode; onPaste?: (e: ClipboardEvent) => void;
+}) {
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label={title}>
+      <aside className="drawer" role="dialog" aria-label={title} onPaste={onPaste}>
         <div className="drawer-head">
           <span className="muted">{title}</span>
           <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>

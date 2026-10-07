@@ -11,7 +11,7 @@ const byDue = (a: Task, b: Task) =>
   a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id;
 
 export default function TasksPage({ params }: { params: Params }) {
-  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast } = useTaskApp();
+  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, helpersOf } = useTaskApp();
   // the admin visiting another department has no tasks of their own there → show everyone
   const who = isLead ? params.who || (inDept ? 'me' : 'all') : 'me';
   const show = params.show === 'done' ? 'done' : 'open';
@@ -23,6 +23,13 @@ export default function TasksPage({ params }: { params: Params }) {
     if (who === 'byme') return t.created_by === me.id && t.assignee_id !== me.id;
     return t.assignee_id === who;
   }), [tasks, who, me.id]);
+
+  // tasks this person helps on (shown in their own group, never mixed with their own work)
+  const helperId = who === 'me' ? me.id : who === 'all' || who === 'byme' ? null : who;
+  const helping = useMemo(() => !helperId ? [] : tasks.filter(t =>
+    t.assignee_id !== helperId && helpersOf(t.id).includes(helperId) &&
+    (show === 'done' ? t.status === 'done' : t.status !== 'done') &&
+    (!q || t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q))).sort(byDue), [tasks, helperId, helpersOf, show, q]);
 
   const filtered = useMemo(() => mine.filter(t =>
     (show === 'done' ? t.status === 'done' : t.status !== 'done') &&
@@ -132,7 +139,7 @@ export default function TasksPage({ params }: { params: Params }) {
         </form>
       )}
 
-      {!loaded ? <div className="empty">Loading…</div> : groups.length === 0 ? (
+      {!loaded ? <div className="empty">Loading…</div> : groups.length === 0 && helping.length === 0 ? (
         <div className="empty">
           {q ? 'No tasks match your search.' : show === 'done' ? 'Nothing completed yet.' : 'Nothing open here.'}
         </div>
@@ -145,6 +152,15 @@ export default function TasksPage({ params }: { params: Params }) {
             </div>
           </section>
         ))
+      )}
+
+      {loaded && helping.length > 0 && (
+        <section className="group helping-group">
+          <h2>Helping on <span className="count">{helping.length}</span></h2>
+          <div className="list">
+            {helping.map(t => <TaskRow key={t.id} t={t} showWho />)}
+          </div>
+        </section>
       )}
     </div>
   );

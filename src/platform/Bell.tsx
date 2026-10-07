@@ -3,6 +3,7 @@ import { usePlatform } from './store';
 import { ago } from '../lib/dates';
 import { go } from '../lib/route';
 import type { Notice } from './types';
+import { APPS } from './registry';
 
 export default function Bell() {
   const { notices, unread, markRead, isAdmin, dept, departments, setDeptId } = usePlatform();
@@ -23,7 +24,8 @@ export default function Bell() {
     // the admin may need to hop to the right department first
     if (isAdmin && n.department_id && n.department_id !== dept?.id) setDeptId(n.department_id);
     if (n.app_key) {
-      const params: Record<string, string> = n.ref_id && n.kind !== 'due_today' ? { task: String(n.ref_id) } : {};
+      const ref = APPS.find(a => a.key === n.app_key)?.refParam;
+      const params: Record<string, string> = ref && n.ref_id && n.kind !== 'due_today' ? { [ref]: String(n.ref_id) } : {};
       setTimeout(() => go(n.app_key!, '', params), 0);
     }
   }

@@ -25,6 +25,14 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
       return { verb: 'edited', detail: a.new_value ?? undefined };
     case 'comment':
       return { verb: 'commented', detail: a.new_value ?? undefined };
+    case 'helper_added':
+      return { verb: 'added helper', detail: nameOf(a.new_value) };
+    case 'helper_removed':
+      return { verb: 'removed helper', detail: nameOf(a.old_value) };
+    case 'step':
+      return a.old_value === 'done'
+        ? { verb: 'ticked a step', detail: a.new_value ?? undefined, tone: 'good' }
+        : { verb: 'unticked a step', detail: a.new_value ?? undefined };
     default:
       return { verb: a.kind };
   }

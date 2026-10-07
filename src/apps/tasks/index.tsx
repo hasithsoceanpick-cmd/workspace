@@ -4,12 +4,13 @@ import { go, setParams } from '../../lib/route';
 import type { AppProps } from '../../platform/registry';
 import { useFeatures } from '../../features/useFeatures';
 import TaskDrawer from './TaskDrawer';
+import TodayPage from './pages/TodayPage';
 import TasksPage from './pages/TasksPage';
 import CalendarPage from './pages/CalendarPage';
 import DayPage from './pages/DayPage';
 import TeamPage from './pages/TeamPage';
 
-/** The Tasks app: list, calendar, day review, team workload. */
+/** The Tasks app: today (time blocking), list, calendar, day review, team workload. */
 export default function TasksApp(props: AppProps) {
   return (
     <TasksProvider>
@@ -32,7 +33,8 @@ function TasksInner({ page, params }: AppProps) {
   }, [params.task, loaded, openTask]);
 
   const tabs = [
-    { id: '', label: 'Tasks', show: true },
+    { id: '', label: 'Today', show: true },
+    { id: 'list', label: 'Tasks', show: true },
     { id: 'calendar', label: 'Calendar', show: true },
     { id: 'day', label: 'Day review', show: true },
     { id: 'team', label: 'Team', show: isLead },
@@ -59,7 +61,8 @@ function TasksInner({ page, params }: AppProps) {
         )}
       </div>
       <main className="main">
-        {current === '' && <TasksPage params={params} />}
+        {current === '' && <TodayPage params={params} />}
+        {current === 'list' && <TasksPage params={params} />}
         {current === 'calendar' && <CalendarPage params={params} />}
         {current === 'day' && <DayPage params={params} />}
         {current === 'team' && <TeamPage />}

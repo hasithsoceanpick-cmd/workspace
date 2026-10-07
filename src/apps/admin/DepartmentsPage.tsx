@@ -17,7 +17,7 @@ export default function DepartmentsPage() {
     const { data, error } = await supabase.from('departments').insert({ name: n }).select().single();
     if (error) return fail(error);
     // switch on every installed app for everyone in the new department
-    const keys = APPS.map(a => a.key).filter(k => apps.some(a => a.key === k));
+    const keys = APPS.filter(a => a.defaultOn).map(a => a.key).filter(k => apps.some(a => a.key === k));
     if (keys.length) {
       const res = await supabase.from('department_apps')
         .insert(keys.map(k => ({ department_id: (data as Department).id, app_key: k, everyone: true })));

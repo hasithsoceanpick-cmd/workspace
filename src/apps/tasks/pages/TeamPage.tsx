@@ -54,7 +54,7 @@ export default function TeamPage() {
             {rows.map(r => (
               <tr key={r.p.id}>
                 <td>
-                  <button className="person-cell person-link" onClick={() => go('tasks', '', { who: r.p.id === me.id ? 'me' : r.p.id })}>
+                  <button className="person-cell person-link" onClick={() => go('tasks', 'list', { who: r.p.id === me.id ? 'me' : r.p.id })}>
                     <Avatar p={r.p} size={28} />
                     <span className="strong">{r.p.full_name}{r.p.id === me.id ? ' (me)' : ''}</span>
                   </button>

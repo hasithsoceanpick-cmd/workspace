@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { usePlatform } from './store';
 import { go, useRoute } from '../lib/route';
 import { PLATFORM_NAME } from './config';
@@ -75,7 +75,9 @@ export default function Shell() {
       </header>
 
       {AppComp && (wantsAdmin || dept) ? (
-        <AppComp key={wantsAdmin ? 'admin' : `${current!.key}-${dept!.id}`} page={route.page} params={route.params} />
+        <Suspense fallback={<main className="main"><div className="page"><div className="empty">Loading…</div></div></main>}>
+          <AppComp key={wantsAdmin ? 'admin' : `${current!.key}-${dept!.id}`} page={route.page} params={route.params} />
+        </Suspense>
       ) : (
         <main className="main">
           <div className="page">

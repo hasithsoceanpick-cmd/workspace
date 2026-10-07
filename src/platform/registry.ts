@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { lazy, type ComponentType } from 'react';
 import type { Params } from '../lib/route';
 import TasksApp from '../apps/tasks';
 import AdminApp from '../apps/admin';
@@ -13,6 +13,10 @@ export interface AppDef {
   key: string;
   name: string;
   component: ComponentType<AppProps>;
+  /** URL parameter that opens one item, used by notifications (e.g. #/tasks?task=12) */
+  refParam?: string;
+  /** switched on (for everyone) when a new department is created; otherwise the admin turns it on */
+  defaultOn?: boolean;
 }
 
 /**
@@ -23,7 +27,9 @@ export interface AppDef {
  *   4. switch it on for a department in Admin console → Departments
  */
 export const APPS: AppDef[] = [
-  { key: 'tasks', name: 'Tasks', component: TasksApp },
+  { key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true },
+  // the editor is large, so Notes only downloads when someone opens it
+  { key: 'notes', name: 'Notes', component: lazy(() => import('../apps/notes')), refParam: 'note' },
 ];
 
 /** Only the platform admin ever sees this one. */

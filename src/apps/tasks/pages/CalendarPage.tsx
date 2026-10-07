@@ -12,7 +12,7 @@ const MAX_IN_CELL = 4;
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
 
 export default function CalendarPage({ params }: { params: Params }) {
-  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast } = useTaskApp();
+  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly } = useTaskApp();
   const view = params.view === 'week' ? 'week' : 'month';
   const anchor = params.d || today();
   const td = today();
@@ -29,7 +29,8 @@ export default function CalendarPage({ params }: { params: Params }) {
   const byDate = useMemo(() => {
     const m = new Map<string, Task[]>();
     for (const t of tasks) {
-      if (!selected.includes(t.assignee_id)) continue;
+      // own work, plus work a selected person is helping on
+      if (!selected.includes(t.assignee_id) && !helpersOf(t.id).some(h => selected.includes(h))) continue;
       if (!showDone && t.status === 'done') continue;
       if (!m.has(t.due_date)) m.set(t.due_date, []);
       m.get(t.due_date)!.push(t);
@@ -40,7 +41,7 @@ export default function CalendarPage({ params }: { params: Params }) {
         || (person(a.assignee_id)?.full_name ?? '').localeCompare(person(b.assignee_id)?.full_name ?? ''));
     }
     return m;
-  }, [tasks, selected, showDone, person]);
+  }, [tasks, selected, showDone, person, helpersOf]);
 
   function togglePerson(id: string) {
     let next: string[];
@@ -57,12 +58,12 @@ export default function CalendarPage({ params }: { params: Params }) {
   async function drop(e: DragEvent, date: string, personId?: string) {
     e.preventDefault();
     setOver(null);
-    const id = Number(e.dataTransfer.getData('text/plain'));
-    const t = tasks.find(x => x.id === id);
+    const [rawId, fromHelperRow] = e.dataTransfer.getData('text/plain').split(':');
+    const t = tasks.find(x => x.id === Number(rawId));
     if (!t) return;
     const patch: { due_date?: string; assignee_id?: string } = {};
     if (t.due_date !== date) patch.due_date = date;
-    if (personId && personId !== t.assignee_id) {
+    if (personId && personId !== t.assignee_id && fromHelperRow !== '1') {
       if (!canAssignTo(personId)) return toast("You can't assign work to that person.", 'error');
       patch.assignee_id = personId;
     }
@@ -81,19 +82,22 @@ export default function CalendarPage({ params }: { params: Params }) {
     onDrop: (e: DragEvent) => drop(e, date, personId),
   });
 
-  const chip = (t: Task) => {
-    const p = person(t.assignee_id);
+  /** rowPerson: in week view, the person whose row this chip sits in */
+  const chip = (t: Task, rowPerson?: string) => {
+    const asHelper = rowPerson ? rowPerson !== t.assignee_id : !selected.includes(t.assignee_id);
+    const p = person(asHelper && rowPerson ? rowPerson : t.assignee_id);
     const done = t.status === 'done';
     const late = !done && t.due_date < td;
+    const canDrag = !helperOnly(t);
     return (
       <div
         key={t.id}
-        className={`chip ${done ? 'done' : ''} ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''}`}
+        className={`chip ${done ? 'done' : ''} ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${asHelper ? 'helper' : ''}`}
         style={{ ['--c' as string]: p?.color ?? '#64748b' }}
-        draggable
-        onDragStart={e => { e.dataTransfer.setData('text/plain', String(t.id)); e.dataTransfer.effectAllowed = 'move'; }}
+        draggable={canDrag}
+        onDragStart={e => { e.dataTransfer.setData('text/plain', `${t.id}:${asHelper ? 1 : 0}`); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={e => { e.stopPropagation(); openTask(t.id); }}
-        title={`${t.title} — ${p?.full_name ?? ''}${late ? ' (overdue)' : ''}`}
+        title={`${t.title} — ${person(t.assignee_id)?.full_name ?? ''}${asHelper ? ` (helping: ${p?.full_name ?? ''})` : ''}${late ? ' (overdue)' : ''}`}
       >
         {multi && view === 'month' && <span className="chip-who">{firstName(p?.full_name ?? '')}</span>}
         <span className="chip-text">{t.title}</span>
@@ -150,7 +154,7 @@ export default function CalendarPage({ params }: { params: Params }) {
                   <span className="dnum">{dayNum(d)}</span>
                 </div>
                 <div className="mcell-items">
-                  {items.slice(0, MAX_IN_CELL).map(chip)}
+                  {items.slice(0, MAX_IN_CELL).map(t => chip(t))}
                   {items.length > MAX_IN_CELL && (
                     <button className="more" onClick={e => { e.stopPropagation(); setParams({ view: 'week', d }); }}>
                       +{items.length - MAX_IN_CELL} more
@@ -184,12 +188,12 @@ export default function CalendarPage({ params }: { params: Params }) {
                 </div>,
                 ...days.map(d => {
                   const key = `${pid}|${d}`;
-                  const items = (byDate.get(d) ?? []).filter(t => t.assignee_id === pid);
+                  const items = (byDate.get(d) ?? []).filter(t => t.assignee_id === pid || helpersOf(t.id).includes(pid));
                   return (
                     <div key={key} className={`wcell ${d === td ? 'today' : ''} ${over === key ? 'over' : ''}`}
                       onClick={() => newTask({ due_date: d, assignee_id: pid })}
                       {...dropProps(key, d, pid)}>
-                      {items.map(chip)}
+                      {items.map(t => chip(t, pid))}
                     </div>
                   );
                 }),
@@ -198,7 +202,7 @@ export default function CalendarPage({ params }: { params: Params }) {
           </div>
         </div>
       )}
-      <p className="hint">Click a day to add a task · drag a task to move its deadline{isLead && view === 'week' ? ' or hand it to someone else' : ''}.</p>
+      <p className="hint">Click a day to add a task · drag a task to move its deadline{isLead && view === 'week' ? ' or hand it to someone else' : ''} · dashed = helping on.</p>
     </div>
   );
 }
