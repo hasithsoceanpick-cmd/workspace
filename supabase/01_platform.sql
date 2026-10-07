@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — platform setup (step 1 of 4)
+--  WORKSPACE — platform setup (step 1 of 5)
 --  Departments, people, the admin, which apps each department / person
 --  can use, and per-department feature switches.
 --
@@ -257,6 +257,28 @@ drop trigger if exists profiles_after on public.profiles;
 create trigger profiles_after after update on public.profiles
   for each row execute function public.profiles_after();
 
+-- ---------- Removing people (admin only) --------------------------------
+-- Deletes someone's login completely: used to decline a sign-up or remove a wrong account.
+-- Refuses while they still have work assigned in an app; deactivate them instead to keep history.
+create or replace function public.admin_delete_user(p_user uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only the administrator can delete people.' using errcode = '42501';
+  end if;
+  if p_user = auth.uid() then
+    raise exception 'You can''t delete your own account.';
+  end if;
+  if public.is_admin_user(p_user) then
+    raise exception 'Administrators can only be removed in the Supabase SQL Editor.';
+  end if;
+  begin
+    delete from auth.users where id = p_user;
+  exception when foreign_key_violation then
+    raise exception 'This person still has tasks assigned. Reassign or delete them first, or use Deactivate to keep their history.';
+  end;
+end $$;
+
 -- ---------- Row level security ------------------------------------------
 alter table public.departments         enable row level security;
 alter table public.profiles            enable row level security;
@@ -348,3 +370,5 @@ revoke execute on function public.notify(uuid[], uuid, text, bigint, text, text,
 revoke execute on function public.handle_new_user() from public, anon, authenticated;
 revoke execute on function public.profiles_guard()  from public, anon, authenticated;
 revoke execute on function public.profiles_after()  from public, anon, authenticated;
+revoke execute on function public.admin_delete_user(uuid) from public, anon;
+grant  execute on function public.admin_delete_user(uuid) to authenticated;
