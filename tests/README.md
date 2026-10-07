@@ -9,6 +9,10 @@ can't jump departments. 70+ checks.
 blocks and Notes (private / department / chosen people, sub-pages, admin read-only,
 links to tasks). 80+ checks.
 
+`tests/db/round3.test.mjs` covers deadline history, repeating tasks, first sign-in of older logins, the
+Monday summary alert and the Month-end declaration feature (isolation, self-declaration, review/approve,
+locking, reminders). ~50 checks.
+
 Run it against a **throwaway local Postgres** (never your live Supabase project):
 
 ```

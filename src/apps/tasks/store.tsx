@@ -175,7 +175,9 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     }
     const t = data as Task;
     setTasks(ts => ts.map(x => (x.id === id ? t : x)));
-    if (patch.assignee_id) refresh();
+    const was = prev.find(x => x.id === id);
+    // reassigned, or a repeating task finished (its next one was just created): reload the list
+    if (patch.assignee_id || (patch.status === 'done' && was?.repeat && !was.next_task_id)) refresh();
     refreshNotices();
     return t;
   }, [tasks, fail, refreshNotices, refresh]);

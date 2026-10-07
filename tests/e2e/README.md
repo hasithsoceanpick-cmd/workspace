@@ -19,9 +19,10 @@ demo (`seed.mjs`: Finance and HR, logins `*@demo.lk` / `password1`), then runs:
 | `test_delete_people.py` | decline sign-ups, delete logins, refusal when tasks are assigned |
 | `test_admin_notes.py` | admin turns Notes on for chosen people |
 | `test_new_features.py` | Today planner, helpers, checklists, screenshots/files/links, Notes (sharing, sub-pages, links to tasks, edit conflicts), phone layout |
+| `test_round3.py` | deadline history on cards, repeating tasks, Who's on what board, weekly summary, Excel exports (opened with openpyxl), older logins, Month-end declaration end to end |
 | `test_first_run.py` | brand-new install: first sign-up becomes admin |
 
-Needs Node 20+, `psql`, and Python 3 with `pip install playwright pillow` then
+Needs Node 20+, `psql`, and Python 3 with `pip install playwright pillow openpyxl` then
 `playwright install chromium`. Screenshots are saved in `tests/e2e/shots/`.
 
 **Note on the stand-in:** it supports only the parts of Supabase this app uses. If you add

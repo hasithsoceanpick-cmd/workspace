@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — platform setup (step 1 of 5)
+--  WORKSPACE — platform setup (step 1 of 6)
 --  Departments, people, the admin, which apps each department / person
 --  can use, and per-department feature switches.
 --
@@ -222,6 +222,36 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- A login that exists but has no Workspace profile (for example an account made for an
+-- older app in the same project) gets one on first sign-in, waiting for the admin's approval.
+-- (Deleted or declined people can't sign in at all: their login is removed.)
+-- >>> ensure_profile
+create or replace function public.ensure_profile() returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  u  auth.users;
+  nm text;
+  n  int;
+  palette text[] := array['#2563eb','#db2777','#059669','#d97706','#7c3aed',
+                          '#0891b2','#dc2626','#65a30d','#c026d3','#ea580c'];
+begin
+  if auth.uid() is null or exists (select 1 from public.profiles where id = auth.uid()) then
+    return;
+  end if;
+  select * into u from auth.users where id = auth.uid();
+  if not found then return; end if;
+  nm := coalesce(nullif(trim(u.raw_user_meta_data ->> 'full_name'), ''), split_part(u.email, '@', 1));
+  select count(*) into n from public.profiles;
+  insert into public.profiles (id, full_name, email, active, color)
+  values (u.id, nm, coalesce(u.email, ''), false, palette[(n % array_length(palette, 1)) + 1])
+  on conflict (id) do nothing;
+  perform public.notify(public.admin_ids(), null, null, null, 'signup',
+    format('%s (%s) signed in and is waiting for approval', nm, u.email), null);
+end $$;
+revoke execute on function public.ensure_profile() from public, anon;
+grant  execute on function public.ensure_profile() to authenticated;
+-- <<< ensure_profile
 
 -- Only the admin can approve people or change departments, roles and colours
 create or replace function public.profiles_guard() returns trigger

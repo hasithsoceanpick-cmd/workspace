@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — Notes app (step 5 of 5)
+--  WORKSPACE — Notes app (step 5 of 6)
 --  Run after 02_app_tasks.sql. Safe to run again.
 --
 --  Pages and sub-pages. A page is private to its owner unless the owner

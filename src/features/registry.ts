@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import type { Params } from '../lib/route';
 import type { Task } from '../apps/tasks/types';
 import DailyNotes from './daily-notes/DailyNotes';
+import MonthEndPage from './month-end/MonthEndPage';
 
 /**
  * DEPARTMENT-SPECIFIC FEATURES
@@ -27,6 +28,8 @@ export interface FeatureModule {
   pages?: { id: string; label: string; component: ComponentType<{ params: Params }> }[];
   dayReview?: ComponentType<{ day: string }>;
   taskPanel?: ComponentType<{ task: Task }>;
+  /** notification kinds this feature sends; clicking one opens the feature's first page */
+  noticeKinds?: string[];
 }
 
 export const FEATURES: FeatureModule[] = [
@@ -36,5 +39,13 @@ export const FEATURES: FeatureModule[] = [
     name: 'Daily notes',
     description: 'Each person writes a short end-of-day note, shown in Day review.',
     dayReview: DailyNotes,
+  },
+  {
+    key: 'month_end',
+    app: 'tasks',
+    name: 'Month-end declaration',
+    description: 'Monthly self-declaration checklist (MEC / CMP lines with owners and due dates), reviewed by a senior executive and approved by the manager.',
+    pages: [{ id: 'month-end', label: 'Month end', component: MonthEndPage }],
+    noticeKinds: ['month_end'],
   },
 ];

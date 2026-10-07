@@ -13,6 +13,7 @@ src/platform/      shared shell: sign-in, app dropdown, admin-only department sw
 src/apps/<key>/    one folder per app (today: tasks, notes, admin). Default export = the app.
 src/platform/slots.ts  places where one app shows a panel inside another (e.g. Notes inside a task).
 src/platform/files.ts  upload / open / delete files in the private "workspace-files" bucket.
+src/platform/excel.ts  plain Excel downloads (bold frozen header, real dates, no formulas) for any app.
 src/features/<key>/ department-only features. Registered in src/features/registry.ts.
 supabase/          numbered SQL files, run in order in the Supabase SQL Editor.
 supabase/templates/ copy these for a new app or a new department feature.
@@ -104,7 +105,16 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
 3. Admin console → Departments & apps → tick it for the department that asked for it.
    It stays OFF everywhere else.
 
-`daily_notes` is the worked example of a department feature.
+`daily_notes` is the small worked example of a department feature; `month_end` (06_feature_month_end.sql,
+src/features/month-end/) is the full one: master list → monthly copy → owner ticks → review → approve.
+A feature's alerts use `notify(..., app_key = the app it extends, kind = its own kind)`; list that kind in
+the feature's `noticeKinds` so the bell opens its page. App pages opened from alerts go in `kindPages`.
+
+## Writing triggers
+
+- The session flag `app.system` (`set_config('app.system','on',true)`) marks the database's own
+  housekeeping (the daily check, creating the next repeating task). Task triggers skip their user rules and
+  alerts while it is on; always switch it back off in the same function.
 
 ## Conventions
 

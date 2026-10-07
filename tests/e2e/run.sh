@@ -4,7 +4,7 @@
 #
 #   DATABASE_URL=postgres://postgres@127.0.0.1:5432/scratch ./tests/e2e/run.sh
 #
-# Needs: Node 20+, Python 3 with `pip install playwright pillow` and `playwright install chromium`,
+# Needs: Node 20+, Python 3 with `pip install playwright pillow openpyxl` and `playwright install chromium`,
 # and the Postgres client (psql). Screenshots land in tests/e2e/shots/.
 set -e
 cd "$(dirname "$0")"
@@ -33,10 +33,10 @@ python3 -m http.server "$APP_PORT" --directory .dist > .web.log 2>&1 & WEB=$!
 trap 'kill $MOCK $WEB 2>/dev/null' EXIT
 sleep 2
 
-for t in test_platform test_tasks test_delete_people test_admin_notes test_new_features; do
+for t in test_platform test_tasks test_delete_people test_admin_notes test_new_features test_round3; do
   node seed.mjs > /dev/null
   echo "== $t"
-  python3 "$t.py" 2>&1 | summary
+  python3 -W ignore "$t.py" 2>&1 | summary
 done
 
 psql "$DATABASE_URL" -q -f wipe.sql

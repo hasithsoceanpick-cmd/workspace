@@ -3,7 +3,8 @@ import { useTaskApp } from './store';
 import type { Task } from './types';
 import { daysBetween, fmtDue, today } from '../../lib/dates';
 import { firstName } from '../../lib/labels';
-import { statusLabel } from './labels';
+import { repeatLabel, statusLabel } from './labels';
+import MovedBadge from './DueHistory';
 import Avatar from '../../platform/Avatar';
 
 export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
@@ -20,7 +21,7 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
     e.stopPropagation();
     if (helping) return toast(`Only ${firstName(who?.full_name ?? 'the owner')} can mark this done.`, 'error');
     const r = await updateTask(t.id, { status: done ? 'todo' : 'done' });
-    if (r) toast(done ? 'Reopened' : 'Marked done');
+    if (r) toast(done ? 'Reopened' : t.repeat && !t.next_task_id ? 'Done — the next one has been created' : 'Marked done');
   }
 
   return (
@@ -40,6 +41,8 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
           )}
           {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`} title="Checklist">☑ {prog.done}/{prog.total}</span>}
           {helping && <span className="pill helping">Helping</span>}
+          {t.repeat && <span className="pill repeat" title="Repeats: the next one is created when this is done">⟳ {repeatLabel(t.repeat)}</span>}
+          <MovedBadge task={t} />
           {t.notes && <span className="muted" title="Has notes">≡</span>}
         </div>
       </div>
@@ -56,6 +59,9 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
         </span>
       )}
       <span className={`tr-due ${overdue ? 'danger' : ''}`}>
+        {!done && t.due_moves > 0 && t.original_due && t.original_due !== t.due_date && (
+          <s className="was" title="First deadline">{fmtDue(t.original_due)}</s>
+        )}
         {done ? '' : overdue ? `${fmtDue(t.due_date)} · ${daysBetween(t.due_date, today())}d late` : fmtDue(t.due_date)}
       </span>
     </div>

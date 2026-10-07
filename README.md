@@ -21,6 +21,8 @@ Runs on **Supabase** (database + logins) and **Vercel** (hosting), both on free 
 | **Tasks:** add helpers | Anyone in that department | Anyone in own department | Self + Members | — |
 | **Today:** look at someone's day (read-only) | Anyone | Anyone in own department | Members | — |
 | **Notes:** read | Every page, including private ones | Own + shared with them | Own + shared with them | Own + shared with them |
+| **Who's on what, Weekly summary** | ✓ | ✓ | ✓ (self + Members) | — |
+| **Month-end declaration** (where switched on) | Manage the list | Manage, review, **approve** | Manage, **review** | Tick own lines |
 
 Your admin login is your normal account. You're also Finance's Manager, and the
 department switcher lets you step into any other department. Being admin is set in the
@@ -28,7 +30,7 @@ database only: no screen in the app can make someone else an admin.
 
 **How departments are kept apart.** Every record carries its department, and the
 database itself refuses to return another department's data. That holds even if
-someone pokes at the API directly. 160+ automated checks cover this (`tests/`).
+someone pokes at the API directly. 200+ automated checks cover this (`tests/`).
 Files and screenshots sit in private storage behind the same rules (10 MB per file).
 
 ---
@@ -39,10 +41,19 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
   click an empty slot to add your own block (Lunch, a meeting…), drag blocks to move them and pull the
   bottom edge to resize. Any day can be opened to plan ahead or look back. Managers and senior
   executives can pick a person to see their day (read-only).
+- **Who's on what** (Managers, Senior Executives): a column per person with the work they're carrying,
+  overdue first; drag a card to someone else to hand it over. Switch to *Table* for the numbers.
+- **Weekly summary** (Managers, Senior Executives): per person for any week, what was done (on time / late),
+  whose deadlines moved, and what's overdue now. Managers get a bell alert every Monday. Export to Excel.
 - **Tasks**: lists grouped Overdue / Today / Tomorrow / This week / Next week / Later. Tick to finish. Quick-add bar.
 - **Calendar**: Month view, and a Week view laid out as *people × days*. Drag a task to move its deadline, or into someone else's row to hand it over.
 - **Day review**: any date, past or present: who completed, started or moved what, comments, and what was due and missed.
 - **Team**: workload per person (open, overdue, due today, done this week).
+- **Deadline history on the card**: a task whose deadline was moved shows **Moved 2×** and its first
+  deadline struck through; click it to see who moved it, when, and from/to which date.
+- **Repeating tasks**: set *Repeat* to every week / month / 3 months / year. When it's marked done, the next
+  one is created on schedule with the same owner, helpers and checklist.
+- **Export to Excel** (Tasks list): every task you can see, plus a sheet of deadline moves. Also a backup.
 - **Inside a task**: a **checklist** of steps with progress (e.g. 3/5), **files, screenshots and links**
   (paste a screenshot with Ctrl+V anywhere in the task), comments and history.
 - **Helpers**: a task has one owner and can have helpers. Managers and senior executives add them.
@@ -60,8 +71,12 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
 - If two people edit the same page at once, the second save is stopped and they choose whose version to keep.
 - Off until you turn it on: **Admin console → Departments & apps → Notes** (whole department or chosen people).
 
-**Daily notes** is an example *department-only feature*: an end-of-day note per person,
-shown in Day review. It's off until you tick it for a department.
+**Department-only features** (off until you tick them for a department):
+- **Month-end declaration** (for Finance): a master list of lines (MEC, CMP or any category) with an owner and
+  a due day. Each month a senior executive or the manager starts the month, which copies the list. Owners tick
+  their own lines and add remarks; when every line is ticked a senior executive marks it **reviewed** and the
+  manager **approves**, which locks the month. Reminders on the due date and when overdue. Export to Excel.
+- **Daily notes**: an end-of-day note per person, shown in Day review.
 
 ---
 
@@ -75,6 +90,7 @@ shown in Day review. It's off until you tick it for a department.
    3. `03_feature_daily_notes.sql`
    4. `04_daily_check.sql`. If it complains about `pg_cron`, enable **Integrations → Cron**, then run it again.
    5. `05_app_notes.sql`
+   6. `06_feature_month_end.sql`
 3. **Authentication → Sign In / Providers → Email** → turn **Confirm email** OFF → Save.
 4. Click **Connect** and copy the **Project URL** and the **Publishable key** (`sb_publishable_…`).
 
@@ -124,6 +140,7 @@ When a change needs a database update, it comes as a file in `supabase/updates/`
 |---|---|
 | `001_delete_people.sql` | Decline / Delete buttons in Admin → People |
 | `002_helpers_checklist_files_today_notes.sql` | Helpers, checklists, files & screenshots, Today planner, Notes app |
+| `003_history_repeat_month_end.sql` | Deadline history, repeating tasks, Monday summary alert, older logins, Month-end declaration |
 
 Then update the code on GitHub **keeping the folders** (`src/`, `supabase/`, …): repository page →
 **Add file → Upload files** → select everything in the extracted project folder and **drag** it into

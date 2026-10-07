@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { usePlatform } from '../../platform/store';
 import { go } from '../../lib/route';
 import type { AppProps } from '../../platform/registry';
@@ -6,7 +7,8 @@ import DepartmentsPage from './DepartmentsPage';
 
 /** Admin console — only the platform admin can open this (and the database enforces it). */
 export default function AdminApp({ page, params }: AppProps) {
-  const { isAdmin, profiles } = usePlatform();
+  const { isAdmin, profiles, reload } = usePlatform();
+  useEffect(() => { if (isAdmin) reload(); }, [isAdmin, reload]);   // always show the latest sign-ups
   if (!isAdmin) return null;
   const pending = profiles.filter(p => !p.active || !p.department_id).length;
   const current = page === 'departments' ? 'departments' : 'people';

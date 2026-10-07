@@ -2,9 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Clipboa
 import { useTaskApp } from './store';
 import { supabase } from '../../supabase';
 import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
-import { PRIORITIES, STATUSES } from './labels';
+import { PRIORITIES, REPEATS, STATUSES } from './labels';
+import { DueMovesList } from './DueHistory';
 import { firstName } from '../../lib/labels';
-import { daysBetween, fmtDue, fmtStamp, today } from '../../lib/dates';
+import { daysBetween, fmtDay, fmtDue, fmtStamp, today } from '../../lib/dates';
 import { describe } from './activity';
 import { useFeatures } from '../../features/useFeatures';
 import { clipboardFiles } from '../../platform/files';
@@ -15,6 +16,7 @@ import { Checklist, useChecklist } from './Checklist';
 
 const editable = (t: TaskDraft | Task) => ({
   title: t.title, notes: t.notes, assignee_id: t.assignee_id, priority: t.priority, due_date: t.due_date,
+  repeat: t.repeat ?? null,
 });
 
 export default function TaskDrawer() {
@@ -35,12 +37,12 @@ export default function TaskDrawer() {
       const d = drawer.defaults;
       return {
         title: d.title ?? '', notes: d.notes ?? '', status: d.status ?? 'todo', priority: d.priority ?? 'normal',
-        due_date: d.due_date ?? today(),
+        due_date: d.due_date ?? today(), repeat: d.repeat ?? null,
         assignee_id: d.assignee_id && team.some(p => p.id === d.assignee_id) ? d.assignee_id : defaultAssignee,
       };
     }
     return task ? { ...editable(task), status: task.status } : {
-      title: '', notes: '', status: 'todo', priority: 'normal', due_date: today(), assignee_id: defaultAssignee,
+      title: '', notes: '', status: 'todo', priority: 'normal', due_date: today(), assignee_id: defaultAssignee, repeat: null,
     };
   });
   const [busy, setBusy] = useState(false);
@@ -49,6 +51,7 @@ export default function TaskDrawer() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [history, setHistory] = useState<Activity[]>([]);
   const [reply, setReply] = useState('');
+  const [showMoves, setShowMoves] = useState(false);
   const [newHelpers, setNewHelpers] = useState<string[]>([]);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const files = useTaskFiles(task?.id ?? null);
@@ -227,6 +230,26 @@ export default function TaskDrawer() {
           </select>
         </label>
       </div>
+
+      <div className="fields two">
+        <label className="field">
+          <span>Repeat</span>
+          <select value={form.repeat ?? ''} onChange={e => set('repeat', (e.target.value || null) as TaskDraft['repeat'])} disabled={readOnly}>
+            <option value="">Doesn't repeat</option>
+            {REPEATS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </label>
+        {form.repeat && <div className="field-note">When this is marked done, the next one is created automatically, with the same owner, helpers and checklist.</div>}
+      </div>
+
+      {task && task.due_moves > 0 && (
+        <div className="due-history">
+          <button type="button" className="link" onClick={() => setShowMoves(v => !v)}>
+            Deadline moved {task.due_moves}× · first set for {fmtDay(task.original_due ?? task.due_date)} {showMoves ? '▴' : '▾'}
+          </button>
+          {showMoves && <DueMovesList task={task} moves={history.filter(a => a.kind === 'due_date').reverse()} />}
+        </div>
+      )}
 
       {(helpers.length > 0 || (isLead && !readOnly)) && (
         <div className="field">

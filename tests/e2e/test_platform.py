@@ -95,7 +95,7 @@ async def main():
         await pr.keyboard.press('Escape')
         await pr.goto(BASE + '/#/admin/people'); await pr.wait_for_timeout(800)
         check(await pr.locator('h1:has-text("People")').count() == 0, 'typing the admin URL does nothing for a manager')
-        await pr.goto(BASE + '/#/tasks/team'); await pr.wait_for_timeout(700)
+        await pr.goto(BASE + '/#/tasks/team?view=table'); await pr.wait_for_timeout(700)
         team_txt = await pr.locator('.team-table').inner_text()
         check('Kasun' not in team_txt and 'Hasith' not in team_txt and 'Dilan' not in team_txt, 'HR team page lists only HR people with the app')
         await pr.click('.bell .icon-btn'); await pr.wait_for_timeout(300)

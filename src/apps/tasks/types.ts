@@ -1,5 +1,6 @@
 export type Status = 'todo' | 'doing' | 'waiting' | 'done';
 export type Priority = 'low' | 'normal' | 'high';
+export type Repeat = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 export interface Task {
   id: number;
@@ -14,6 +15,11 @@ export interface Task {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  /** the first deadline it was given, and how many times it has been moved */
+  original_due: string | null;
+  due_moves: number;
+  repeat: Repeat | null;
+  next_task_id: number | null;
 }
 
 export interface TaskComment {
@@ -29,7 +35,7 @@ export interface TaskActivity {
   task_id: number;
   department_id: string;
   actor_id: string | null;
-  kind: 'created' | 'status' | 'due_date' | 'assignee' | 'edited' | 'comment' | 'helper_added' | 'helper_removed' | 'step';
+  kind: 'created' | 'status' | 'due_date' | 'assignee' | 'edited' | 'comment' | 'helper_added' | 'helper_removed' | 'step' | 'repeated';
   old_value: string | null;
   new_value: string | null;
   created_at: string;
@@ -42,6 +48,7 @@ export interface TaskDraft {
   status: Status;
   priority: Priority;
   due_date: string;
+  repeat?: Repeat | null;
 }
 
 export interface TaskHelper {

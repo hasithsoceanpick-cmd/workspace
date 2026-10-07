@@ -26,10 +26,16 @@ function Gate({ userId }: { userId: string }) {
   const [state, setState] = useState<{ me: Profile | null; isAdmin: boolean } | undefined>(undefined);
 
   const load = useCallback(async () => {
-    const [p, a] = await Promise.all([
+    const get = () => Promise.all([
       supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
       supabase.from('platform_admins').select('user_id').eq('user_id', userId).maybeSingle(),
     ]);
+    let [p, a] = await get();
+    if (!p.data && !p.error) {
+      // a login made before Workspace (same project) has no profile yet: create one, waiting for approval
+      await supabase.rpc('ensure_profile');
+      [p, a] = await get();
+    }
     setState({ me: (p.data as Profile) ?? null, isAdmin: !!a.data });
   }, [userId]);
 

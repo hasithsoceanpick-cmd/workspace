@@ -101,6 +101,7 @@ export default function CalendarPage({ params }: { params: Params }) {
       >
         {multi && view === 'month' && <span className="chip-who">{firstName(p?.full_name ?? '')}</span>}
         <span className="chip-text">{t.title}</span>
+        {t.due_moves > 0 && <span className="chip-moved" title={`Deadline moved ${t.due_moves}×`}>↻{t.due_moves}</span>}
       </div>
     );
   };

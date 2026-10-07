@@ -17,6 +17,8 @@ export interface AppDef {
   refParam?: string;
   /** switched on (for everyone) when a new department is created; otherwise the admin turns it on */
   defaultOn?: boolean;
+  /** notification kinds that open a particular page of the app (e.g. weekly → 'week') */
+  kindPages?: Record<string, string>;
 }
 
 /**
@@ -27,7 +29,7 @@ export interface AppDef {
  *   4. switch it on for a department in Admin console → Departments
  */
 export const APPS: AppDef[] = [
-  { key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true },
+  { key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true, kindPages: { weekly: 'week' } },
   // the editor is large, so Notes only downloads when someone opens it
   { key: 'notes', name: 'Notes', component: lazy(() => import('../apps/notes')), refParam: 'note' },
 ];

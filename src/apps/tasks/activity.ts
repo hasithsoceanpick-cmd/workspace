@@ -1,6 +1,6 @@
 import type { TaskActivity as Activity } from './types';
 import { fmtDay } from '../../lib/dates';
-import { statusLabel } from './labels';
+import { repeatLabel, statusLabel } from './labels';
 
 /** Turn a history entry into a short verb + optional detail. */
 export function describe(a: Activity, nameOf: (id: string | null) => string): { verb: string; detail?: string; tone?: string } {
@@ -29,6 +29,8 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
       return { verb: 'added helper', detail: nameOf(a.new_value) };
     case 'helper_removed':
       return { verb: 'removed helper', detail: nameOf(a.old_value) };
+    case 'repeated':
+      return { verb: 'set up the next one', detail: `repeats ${repeatLabel(a.new_value).toLowerCase()} · after #${a.old_value}` };
     case 'step':
       return a.old_value === 'done'
         ? { verb: 'ticked a step', detail: a.new_value ?? undefined, tone: 'good' }

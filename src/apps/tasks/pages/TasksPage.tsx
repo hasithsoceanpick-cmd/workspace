@@ -5,13 +5,22 @@ import { addDays, fmtDay, localDayOf, startOfWeek, today } from '../../../lib/da
 import { firstName } from '../../../lib/labels';
 import type { Task } from '../types';
 import TaskRow from '../TaskRow';
+import { exportTasks } from '../export';
 
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
 const byDue = (a: Task, b: Task) =>
   a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id;
 
 export default function TasksPage({ params }: { params: Params }) {
-  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, helpersOf } = useTaskApp();
+  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept } = useTaskApp();
+  const [exporting, setExporting] = useState(false);
+  async function doExport() {
+    setExporting(true);
+    try {
+      await exportTasks({ deptName: dept!.name, deptId: dept!.id, tasks, person, helpersOf, progressOf });
+    } catch (e) { fail(e); }
+    setExporting(false);
+  }
   // the admin visiting another department has no tasks of their own there → show everyone
   const who = isLead ? params.who || (inDept ? 'me' : 'all') : 'me';
   const show = params.show === 'done' ? 'done' : 'open';
@@ -121,6 +130,10 @@ export default function TasksPage({ params }: { params: Params }) {
           </div>
           <input className="search" type="search" placeholder="Search…" defaultValue={params.q ?? ''}
             onChange={e => setParams({ q: e.target.value })} />
+          <button className="btn sm" onClick={doExport} disabled={exporting || !loaded}
+            title="Download every task you can see as an Excel file (also a handy backup)">
+            {exporting ? 'Preparing…' : 'Export to Excel'}
+          </button>
         </div>
       </div>
 

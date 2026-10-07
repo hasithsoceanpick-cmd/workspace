@@ -4,7 +4,7 @@ Everything someone (a person or Claude in another account) needs to carry on wit
 this app without the original chat. Read this first, then `CLAUDE.md` (the rules for
 changing the code) and `README.md` (setup and admin guide).
 
-Last updated: 6 October 2026.
+Last updated: 7 October 2026.
 
 ---
 
@@ -43,7 +43,11 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
    (`notes_pages`, `notes_shares`, `notes_files`, `notes_task_links`) and files use a new bucket
    `workspace-files`; it never touches the old table. It ends with a read-only report of anything
    in the database that isn't Workspace's. To check U2 has run:
-   `select to_regclass('public.notes_pages');` → not null means done.
+   `select to_regclass('public.notes_pages');` → not null means done. **U2 ran successfully on 6 Oct.**
+   **Update 3 (`003_history_repeat_month_end.sql`, U3)** was delivered on 7 Oct: deadline history,
+   repeating tasks, Monday summary alert, `ensure_profile()` for older logins, and the Month-end
+   declaration feature. To check it has run: `select to_regclass('public.month_end_items');` → not null.
+   After running it he ticks **Month-end declaration** for Finance in Admin → Departments & apps.
    Leave the old `notes` table (and any old `attachments` bucket) alone unless he decides otherwise.
 2. **Code on GitHub.** An earlier upload put 48 copies of files loose at the top level of the repo
    (folders flattened); the site kept building from the older `src/` folder. Those loose files are
@@ -52,6 +56,27 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
    present). Upload = Add file → Upload files → drag everything from the extracted folder (dragging
    keeps folders; the file picker flattens them) → check paths like `src/apps/notes/…` → Commit.
    Cleaning up the loose files is optional and can wait.
+2a. **The Supabase project is shared with his earlier finance-team app** (the single-file
+   "hasith-finance" app on Netlify). The U2 report (6 Oct) listed its tables: attachments (59 rows),
+   audit_items, bank_accounts, bank_recs, chat_reads, coin_ledger, conversation_members, conversations,
+   daily_logs (71), declaration_entries, declaration_items, declarations, holidays, leave_requests,
+   log_fields, messages, note_pins, notes (19), payment_recipients, payments, pet_* tables, plan_entries,
+   project_members, projects, reminders, … (list continued below the screenshot), plus a storage bucket
+   `attachments` whose rules let **any logged-in user read** its files. Consequences:
+   - Both apps share the same logins, and Workspace's `handle_new_user` sign-up trigger replaced the old one.
+   - **Confirmed 7 Oct: the old app shows nothing.** It used the same table names `tasks`, `profiles` and
+     `notifications`; Workspace's clean-slate step 0 (run on 4 Oct to fix the first setup error) dropped
+     them. His project is on the **Free plan (no backups)** and he has **no copy** (no Excel tracker, no app
+     files, no export), so that data can't be recovered. All the old app's other tables still have their
+     data. He chose to **decide later** what to do with the old app. Options to offer when he's ready:
+     keep both (move Workspace to its own new Supabase project, rebuild the old app's three tables there),
+     or retire it and bring useful data (e.g. the declaration lists in `declaration_items`) into Workspace.
+   - His old team's logins still exist; they get a Workspace profile (pending approval) the first time they
+     sign in (`ensure_profile()`, update 3). Don't **Decline** them if the old app may be revived:
+     declining deletes the login itself.
+   - Anyone who signs up on Workspace gets a logged-in session in this project, so the old app's open rules
+     could expose its data. Long-term fix: give Workspace its own Supabase project, or retire/lock down
+     the old app. Never modify the old app's tables or rules without his explicit go-ahead.
 3. **Notes** must be switched on by him: Admin console → Departments & apps → tick Notes
    (everyone, or only selected people). New departments get Tasks only.
 4. The copy-paste SQL page (an Artifact in his old Claude account) can be rebuilt with
@@ -107,9 +132,27 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
 - Autosave. If two people edit at once, the later save is refused and that person chooses
   "Show their version" or "Keep mine" (no live co-editing).
 
+### Round 4 (7 Oct 2026)
+- **Deadline history on the task card**: "Moved 2×" pill + first deadline struck through; click for who moved
+  it, when, from/to. Also in the task panel. (He did *not* want a required reason for moves.)
+- **Who's on what** (replaces the Team tab, leads only): a column per person with their open work (own +
+  helping, dashed), overdue first; drag a card to another person to hand it over; Table view keeps the numbers.
+- **Repeating tasks**: weekly / monthly / every 3 months / yearly. The next one is created when the current
+  one is marked done, on the series' schedule (anchored to the first deadline, so 31 Jan → 28 Feb → 31 Mar),
+  copying owner, assigner, helpers and checklist (unticked). Once per occurrence.
+- **Export to Excel**: tasks + deadline moves (Tasks list), weekly summary, month-end month. Plain values,
+  bold frozen header, real dates — his preference for simple, easy-on-the-eyes spreadsheets.
+- **Weekly summary** (leads): per person done / on time / late / moved / new / overdue, plus lists;
+  managers get a bell alert every Monday from the daily check.
+
 ### Department-only features
-- `daily_notes` (end-of-day note per person, shown in Day review) is the worked example of a
-  feature switched on for one department only.
+- **`month_end` — Month-end declaration (for Finance)**, "like the old app": master list of lines
+  (code, category MEC/CMP/any, title, owner, due day of the following month); a senior or the manager
+  **starts** a month (copies the list); **only a line's owner ticks it** (self-declaration) and adds remarks;
+  when all are ticked a **senior executive reviews**, then the **manager approves** → month locked
+  (manager can reopen; reviewer can send back). Alerts: ready for review, ready for approval, approved,
+  due today, overdue. Separate cron job `workspace-month-end-check` (07:05 Colombo).
+- `daily_notes` (end-of-day note per person, shown in Day review) is the small worked example.
 
 ## 5. How the code is organised
 
@@ -171,16 +214,18 @@ Key technical points (all in `CLAUDE.md` too):
 5. Update README (updates table, feature list) and this file.
 6. Rebuild the SQL page (`tools/sql-page/build.py`: new update in `steps_update` with
    `badge='now'`, previous one moved to `steps_done`) and publish it.
-7. Zip the project (without `node_modules`, `dist`, `.env*`), send it, and give him the 3–4 steps:
+7. Zip the project (without `node_modules`, `dist`, `.env*`), send it, and give him the 3–4 steps
+   (GitHub's web upload takes at most 100 files at a time; the project is 98 files — if it grows past
+   that, have him upload the `src` folder first, then everything else):
    run the update SQL → upload code via github.dev → wait a minute → switch anything new on in Admin.
 
 ## 8. Testing
 
-- `tests/db/run.sh` — 74 isolation + 89 feature checks on a local Postgres with a stand-in for
-  Supabase's `auth` and `storage` schemas.
+- `tests/db/run.sh` — 74 isolation + 89 feature + 48 round-4 checks (211) on a local Postgres with a
+  stand-in for Supabase's `auth` and `storage` schemas.
 - `tests/e2e/run.sh` — builds the app against `tests/e2e/mock-supabase.mjs` (auth, REST subset,
   storage with real RLS), seeds a Finance + HR demo (`*@demo.lk` / `password1`) and drives Chrome
-  through every feature. At handoff all 138 browser checks pass (run from a clean copy of this package).
+  through every feature. At handoff all 186 browser checks pass.
 - Local Postgres used during development: Postgres 16 on port 54322, user `postgres`.
 
 ## 9. Known limits and ideas not built
@@ -190,7 +235,11 @@ Key technical points (all in `CLAUDE.md` too):
 - Images removed from a note's text stay in storage until the page is deleted.
 - Copying an image from one page into another: people who can't open the first page can't see it.
 - Notes search is by page title only.
-- No email notifications; no export to Excel; no recurring tasks; no file previews beyond images.
+- No email notifications; no file previews beyond images.
+- Repeating tasks only create the next one when the current one is done (an unfinished one simply goes overdue).
+- Month-end: only the owner can tick a line (reassign it to tick on someone's behalf). The old app's
+  declaration lists were not imported (his call, "decide later").
+- Supabase Free plan has **no backups**: the Excel exports are his only copy of Workspace data.
 - Earlier, separate project (not this app): a single-file HTML + Supabase task app on Netlify
   ("hasith-finance") for his finance team. Don't mix the two; this one replaced it as the new build.
 

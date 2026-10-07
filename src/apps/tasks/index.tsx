@@ -9,6 +9,7 @@ import TasksPage from './pages/TasksPage';
 import CalendarPage from './pages/CalendarPage';
 import DayPage from './pages/DayPage';
 import TeamPage from './pages/TeamPage';
+import WeekPage from './pages/WeekPage';
 
 /** The Tasks app: today (time blocking), list, calendar, day review, team workload. */
 export default function TasksApp(props: AppProps) {
@@ -37,7 +38,8 @@ function TasksInner({ page, params }: AppProps) {
     { id: 'list', label: 'Tasks', show: true },
     { id: 'calendar', label: 'Calendar', show: true },
     { id: 'day', label: 'Day review', show: true },
-    { id: 'team', label: 'Team', show: isLead },
+    { id: 'team', label: "Who's on what", show: isLead },
+    { id: 'week', label: 'Weekly summary', show: isLead },
     ...featurePages.map(p => ({ id: `x-${p.id}`, label: p.label, show: true })),
   ].filter(t => t.show);
   const current = tabs.some(t => t.id === page) ? page : '';
@@ -65,7 +67,8 @@ function TasksInner({ page, params }: AppProps) {
         {current === 'list' && <TasksPage params={params} />}
         {current === 'calendar' && <CalendarPage params={params} />}
         {current === 'day' && <DayPage params={params} />}
-        {current === 'team' && <TeamPage />}
+        {current === 'team' && <TeamPage params={params} />}
+        {current === 'week' && <WeekPage params={params} />}
         {FeaturePage && <FeaturePage params={params} />}
       </main>
       {drawer && <TaskDrawer key={drawer.mode === 'edit' ? `e${drawer.id}` : 'new'} />}

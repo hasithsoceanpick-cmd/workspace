@@ -18,14 +18,17 @@ COPY_ICON = '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
 OK = 'Success. No rows returned'
 
 steps_update = [
-  dict(key='u2', num='U2', title='Helpers, checklists, files, Today planner, Notes', badge='now',
-       file='updates/002_helpers_checklist_files_today_notes.sql',
-       desc='<b>New version (6 Oct) — copy it again.</b> Everything in this update: helpers on tasks, checklists, screenshots/files/links (private storage, 10 MB each), the Today time-blocking page and the Notes app. Its tables now have their own names, so they never clash with the older <code>notes</code> table already in your database. Keeps all your data; safe to run again.',
-       expect='a small report table at the bottom (for example: table · notes). It lists things already in your database that Workspace leaves alone. Send me a screenshot of it.', note='Supabase will warn about "destructive operations" — click <b>Run this query</b>. It only replaces older versions of the app\'s own rules.', cls='step-update'),
+  dict(key='u3', num='U3', title='Deadline history, repeating tasks, month-end declaration', badge='now',
+       file='updates/003_history_repeat_month_end.sql',
+       desc='Adds the deadline history on task cards, repeating tasks, the Monday weekly-summary alert, a fix so people who already had a login (from your older app) can get into Workspace, and the Month-end declaration feature (off until you tick it for Finance). Keeps all your data; safe to run again.',
+       expect=OK, note='Supabase will warn about "destructive operations" — click <b>Run this query</b>. It only replaces older versions of the app\'s own rules.', cls='step-update'),
 ]
 steps_done = [
+  dict(key='u2', num='U2', title='Helpers, checklists, files, Today planner, Notes', badge='done',
+       file='updates/002_helpers_checklist_files_today_notes.sql',
+       desc='Already run on your database (6 Oct). No need to run again.', expect='a small report table', cls='is-done static-done'),
   dict(key='u1', num='U1', title='Decline / delete people', badge='done', file='updates/001_delete_people.sql',
-       desc='Decline and Delete buttons in Admin console → People. Already run on your database — no need to run again.', expect=OK, cls='is-done static-done'),
+       desc='Already run on your database. No need to run again.', expect=OK, cls='is-done static-done'),
 ]
 steps_fresh = [
   dict(key='0', num='0', title='Clean slate', file='00_reset.sql', cls='step-reset',
@@ -36,6 +39,7 @@ steps_fresh = [
   dict(key='4', num='4', title='Morning deadline check', file='04_daily_check.sql', desc='Schedules the 7:00 am missed-deadline and due-today alerts.',
        expect='Success, with one row showing a number (the job id)', note='If it shows an error mentioning <code>pg_cron</code>: left menu → <b>Integrations</b> → <b>Cron</b> → enable it, then run this one again.'),
   dict(key='5', num='5', title='Notes app', file='05_app_notes.sql', desc='Pages and sub-pages, private or shared, with files and links to tasks. Off until you switch it on for a department.', expect=OK),
+  dict(key='6', num='6', title='Month-end declaration feature', file='06_feature_month_end.sql', desc='The monthly self-declaration checklist. Off until you tick it for a department.', expect=OK),
 ]
 
 def section(s):
@@ -71,7 +75,7 @@ all_steps = steps_update + steps_done + steps_fresh
 body = f'''<div class="wrap">
   <header>
     <h1>Workspace SQL setup</h1>
-    <p>Copy a script, paste it into Supabase, run it. Your database is already set up, so only <b>U2</b> at the top is needed now.</p>
+    <p>Copy a script, paste it into Supabase, run it. Your database is already set up, so only <b>U3</b> at the top is needed now.</p>
   </header>
 
   <div class="how">
@@ -90,12 +94,12 @@ body = f'''<div class="wrap">
   </div>
 
   <div class="group-title">First-time setup (already done)</div>
-  <p class="group-note">For a fresh install only: run 1 → 5 in order (updates are already included). Steps 1–5 are safe to re-run; step 0 is not.</p>
+  <p class="group-note">For a fresh install only: run 1 → 6 in order (updates are already included). Steps 1–6 are safe to re-run; step 0 is not.</p>
   <div class="steps">
 {chr(10).join(section(s) for s in steps_fresh)}
   </div>
 
-  <footer>After U2: open the app → Admin console → <b>Departments &amp; apps</b> → tick <b>Notes</b> for the departments (or chosen people) that should have it. After a fresh install: Authentication → Sign In / Providers → Email → turn <b>Confirm email</b> off, and copy the Project URL and Publishable key from <b>Connect</b>.</footer>
+  <footer>After U3: open the app → Admin console → <b>Departments &amp; apps</b> → under Finance, tick <b>Month-end declaration</b>. After a fresh install: Authentication → Sign In / Providers → Email → turn <b>Confirm email</b> off, and copy the Project URL and Publishable key from <b>Connect</b>.</footer>
 </div>
 
 <div class="toast" id="toast" hidden></div>

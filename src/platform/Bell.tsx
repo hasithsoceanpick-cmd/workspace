@@ -4,6 +4,7 @@ import { ago } from '../lib/dates';
 import { go } from '../lib/route';
 import type { Notice } from './types';
 import { APPS } from './registry';
+import { FEATURES } from '../features/registry';
 
 export default function Bell() {
   const { notices, unread, markRead, isAdmin, dept, departments, setDeptId } = usePlatform();
@@ -24,9 +25,13 @@ export default function Bell() {
     // the admin may need to hop to the right department first
     if (isAdmin && n.department_id && n.department_id !== dept?.id) setDeptId(n.department_id);
     if (n.app_key) {
-      const ref = APPS.find(a => a.key === n.app_key)?.refParam;
+      const app = APPS.find(a => a.key === n.app_key);
+      const ref = app?.refParam;
       const params: Record<string, string> = ref && n.ref_id && n.kind !== 'due_today' ? { [ref]: String(n.ref_id) } : {};
-      setTimeout(() => go(n.app_key!, '', params), 0);
+      // some alerts open a page instead of an item: the app's own pages, or a department feature's page
+      const feature = FEATURES.find(f => f.app === n.app_key && f.noticeKinds?.includes(n.kind) && f.pages?.length);
+      const page = app?.kindPages?.[n.kind] ?? (feature ? `x-${feature.pages![0].id}` : '');
+      setTimeout(() => go(n.app_key!, page, params), 0);
     }
   }
 
