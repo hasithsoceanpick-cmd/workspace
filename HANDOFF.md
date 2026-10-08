@@ -4,7 +4,7 @@ Everything someone (a person or Claude in another account) needs to carry on wit
 this app without the original chat. Read this first, then `CLAUDE.md` (the rules for
 changing the code) and `README.md` (setup and admin guide).
 
-Last updated: 7 October 2026.
+Last updated: 7 October 2026 (round 5).
 
 ---
 
@@ -12,7 +12,8 @@ Last updated: 7 October 2026.
 
 **Workspace** is a small internal web app for Hasith, a finance manager, and his
 organisation. One website, several **departments**, each fully private from the others.
-Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes**.
+Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes**. It installs on phones
+as an app (PWA) and can send phone alerts (web push).
 
 - Hasith is the only **platform admin**. It is his normal login (also Finance's Manager).
   Only he can switch departments, approve sign-ups, and turn apps on per department or per person.
@@ -31,6 +32,7 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
 | Database, logins, files | Supabase project **workspace**, region Singapore | Email confirmation is **off** |
 | Vercel environment variables | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Values from Supabase → Connect. (He once typed the URL into the Key box; the *Key* is the variable name.) |
 | Morning alerts | Supabase pg_cron job `workspace-daily-check` | `30 1 * * *` UTC = 07:00 Colombo |
+| Phone alerts sender | Supabase Edge Function **workspace-push** (Verify JWT **off**) | Code in `supabase/functions/workspace-push/index.ts`; deployed by pasting it in the dashboard editor. Keys live in `workspace_push_config` (no app access). |
 | Time zone | `Asia/Colombo` | `app_tz()` in `01_platform.sql`; dates are `YYYY-MM-DD` strings |
 
 ## 3. State at handoff — check these first
@@ -48,6 +50,12 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
    repeating tasks, Monday summary alert, `ensure_profile()` for older logins, and the Month-end
    declaration feature. To check it has run: `select to_regclass('public.month_end_items');` → not null.
    After running it he ticks **Month-end declaration** for Finance in Admin → Departments & apps.
+   **Update 4 (`004_alerts_signoff_compliance_search.sql`, U4)** was delivered on 7 Oct (round 5). It
+   **includes all of U3**, so it works whether or not U3 was run. To check it has run:
+   `select to_regclass('public.compliance_items');` → not null. After it: deploy the `workspace-push` Edge
+   Function (Verify JWT off), Admin → **Phone alerts** → Turn on → test, and tick **Compliance calendar**
+   for Finance. Tested on copies of the post-U2 and post-U3 schema with older-app tables present: run twice,
+   data kept, older app's tables/rules byte-for-byte unchanged.
    Leave the old `notes` table (and any old `attachments` bucket) alone unless he decides otherwise.
 2. **Code on GitHub.** An earlier upload put 48 copies of files loose at the top level of the repo
    (folders flattened); the site kept building from the older `src/` folder. Those loose files are
@@ -145,6 +153,47 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
 - **Weekly summary** (leads): per person done / on time / late / moved / new / overdue, plus lists;
   managers get a bell alert every Monday from the daily check.
 
+### Round 5 (7 Oct 2026)
+He asked for the app "to be downloaded as a web app too, so that team can use this even on their phones" and for
+"real value additions". His picks: **Install + phone alerts**, **Checker sign-off**, **Acknowledge new tasks**,
+**Compliance calendar** ("you give me the dates once" → he enters the dates; we only suggest names), **Performance
+trends**, **Search everything**.
+- **Install (PWA)**: `public/manifest.webmanifest`, icons in `public/icons/`, service worker `public/sw.js`
+  (keeps the app's own files for a fast/offline start — network-first page, cache-first hashed assets — and never
+  stores anything from Supabase). Account menu → *Install app* (Android prompt; iPhone shows Share → Add to Home
+  Screen). App-icon badge shows the unread count where supported.
+- **Phone alerts (web push)**: everything that lands in the bell is pushed to the person's devices that have
+  *Phone alerts on this device* switched on (account menu). Path: `notifications` insert → statement trigger
+  `workspace_push_notify` (07_push.sql) → `pg_net` → Edge Function `workspace-push` → push service → device.
+  The function is dependency-free (Web Crypto: RFC 8291 aes128gcm + VAPID ES256), holds no keys (each batch carries
+  them from the DB) and only posts to official push hosts. Keys are generated in the admin's browser on
+  *Turn on phone alerts* and stored in `workspace_push_config` (RLS on, no grants). Devices whose push service
+  says 404/410 are forgotten; unused for 120 days too. Signing out removes that device. Tapping an alert opens
+  `#/go?notice=<id>` which opens what the notification is about. iPhone needs the app on the Home Screen (iOS 16.4+).
+  Admin → Phone alerts shows set-up steps, test result in plain words (401 → turn off Verify JWT; 404 → not
+  deployed), who has alerts on, and recent sends.
+- **Checker sign-off (maker-checker)**: new status `review`. When the owner marks a task done that someone else
+  gave them, it goes to `review`; whoever gave it (or a department manager, or the admin) **signs off** (→ done)
+  or **sends back** with a required reason (`tasks_send_back` RPC; reason kept in history as `sent_back`). The
+  owner may take it back. Per task `needs_check` (default on; only the giver/manager can change it). Repeating
+  tasks spawn on sign-off. `review` is not overdue / due-today. If the giver left, managers are asked.
+  Alerts: review, signed_off, sent_back.
+- **Got it (acknowledge)**: `acknowledged_at` — null for work given by someone else until the owner presses
+  *Got it* (or changes status / deadline); reset on reassign. Existing tasks were marked seen when added.
+  Morning reminder to the owner each day while unopened; one FYI to the giver.
+- **Early reminder**: `remind_days` per task (1 day … 1 month before) → `due_soon` alert once per deadline.
+- **Compliance calendar** (feature `compliance`, 08_feature_compliance.sql): `compliance_items` linked to a
+  repeating task series (`tasks.series_id` = first task of the series). Add obligation = `compliance_add` RPC
+  (high-priority monthly/quarterly/… task with early reminder, atomically). List with next deadline, days left,
+  owner, status and on-time dots; *Next 12 months* view projects the schedule; export. Leads add/edit/pause;
+  members view.
+- **Trends** (Reports → Trends, leads): `tasks_trends(dept, months)` (security invoker, RLS applies) per
+  person per month: due, on time, late, still open, finished, deadline moves, sent back, tasks given, average
+  hours to open. "Finished" means sent for sign-off or done (`submitted_at`, falling back to `completed_at`).
+  Weekly summary moved under **Reports** (route `week` kept for the Monday alert).
+- **Search** (Ctrl+K / magnifier): `tasks_search` and `notes_search` (security invoker) with a provider list
+  in `src/platform/slots.ts` (`SEARCH`); only finds what the person can already open.
+
 ### Department-only features
 - **`month_end` — Month-end declaration (for Finance)**, "like the old app": master list of lines
   (code, category MEC/CMP/any, title, owner, due day of the following month); a senior or the manager
@@ -152,6 +201,7 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
   when all are ticked a **senior executive reviews**, then the **manager approves** → month locked
   (manager can reopen; reviewer can send back). Alerts: ready for review, ready for approval, approved,
   due today, overdue. Separate cron job `workspace-month-end-check` (07:05 Colombo).
+- **`compliance` — Compliance calendar (for Finance)**: see Round 5 above.
 - `daily_notes` (end-of-day note per person, shown in Day review) is the small worked example.
 
 ## 5. How the code is organised
@@ -159,14 +209,18 @@ Inside, people use **apps** picked from a dropdown: today **Tasks** and **Notes*
 See `CLAUDE.md` for the full rules. In short:
 
 ```
-src/platform/   shell, login, app dropdown, admin department switcher, bell, files.ts, slots.ts, registry.ts
-src/apps/tasks/ Today, list, calendar, day review, team; TaskDrawer, Checklist, TaskFiles, store
-src/apps/notes/ page tree, NotePage, TipTap Editor, ShareDialog, NoteFiles, LinkedTasks, LinkedNotesPanel
-src/apps/admin/ People (approve/decline/delete/roles) and Departments & apps
-src/features/   department-only features (daily-notes)
-supabase/       01–05 setup files, updates/NNN, templates/, 00_reset.sql (wipes data!)
-tests/db/       database security tests (163 checks)
-tests/e2e/      browser tests + a local stand-in for Supabase
+src/platform/   shell, login, app dropdown, admin department switcher, bell, Search (Ctrl+K), pwa.ts, push.ts,
+                notices.ts, files.ts, excel.ts, slots.ts, registry.ts
+src/apps/tasks/ Today, list, calendar, day review, who's on what, reports (week, trends); TaskDrawer, store, search.ts
+src/apps/notes/ page tree, NotePage, TipTap Editor, ShareDialog, NoteFiles, LinkedTasks, LinkedNotesPanel, search.ts
+src/apps/admin/ People, Departments & apps, Phone alerts
+src/features/   department-only features (daily-notes, month-end, compliance)
+public/         manifest, icons, service worker (sw.js)
+supabase/       01–08 setup files, updates/NNN, functions/workspace-push (Edge Function), templates/,
+                00_reset.sql (wipes data!)
+tests/db/       database security tests (~330 checks)
+tests/e2e/      browser tests + a local stand-in for Supabase (incl. pg_net and fake phones)
+tests/push/     the Edge Function in real Deno (25 checks)
 tools/sql-page/ builds the copy-paste SQL page for Hasith
 ```
 
@@ -183,6 +237,10 @@ Key technical points (all in `CLAUDE.md` too):
   access via `tasks_file_ok` / `notes_file_ok`. Delete files **before** deleting the record.
 - The Notes editor (TipTap 3) is lazy-loaded so the main bundle stays small.
 - Links only allow `http(s)://` and `mailto:`.
+- Phone alerts never block anything: the push trigger swallows its own errors (`raise warning`), and the
+  browser side ignores push failures on app start.
+- The service worker must not cache Supabase calls (it only handles same-origin GETs). `vercel.json`
+  serves `sw.js` with no-cache so new versions reach phones on the next open.
 
 ## 6. How to work with Hasith
 
@@ -215,17 +273,19 @@ Key technical points (all in `CLAUDE.md` too):
 6. Rebuild the SQL page (`tools/sql-page/build.py`: new update in `steps_update` with
    `badge='now'`, previous one moved to `steps_done`) and publish it.
 7. Zip the project (without `node_modules`, `dist`, `.env*`), send it, and give him the 3–4 steps
-   (GitHub's web upload takes at most 100 files at a time; the project is 98 files — if it grows past
-   that, have him upload the `src` folder first, then everything else):
+   (GitHub's web upload takes at most 100 files at a time; the project is now over 100 files, so he uploads
+   in two goes: the `src` folder first, then everything else):
    run the update SQL → upload code via github.dev → wait a minute → switch anything new on in Admin.
 
 ## 8. Testing
 
-- `tests/db/run.sh` — 74 isolation + 89 feature + 48 round-4 checks (211) on a local Postgres with a
-  stand-in for Supabase's `auth` and `storage` schemas.
+- `tests/db/run.sh` — 74 isolation + 89 feature + 49 round-4 + 111 round-5 checks (323) on a local Postgres
+  with a stand-in for Supabase's `auth`, `storage` and `pg_net`.
+- `tests/push/run.sh` — the Edge Function in real Deno (from npm), checked against the reference decoder. 25 checks.
 - `tests/e2e/run.sh` — builds the app against `tests/e2e/mock-supabase.mjs` (auth, REST subset,
   storage with real RLS), seeds a Finance + HR demo (`*@demo.lk` / `password1`) and drives Chrome
-  through every feature. At handoff all 186 browser checks pass.
+  through every feature. All 259 browser checks pass (incl. 69 for round 5: install, phone alerts end to end
+  with fake phones running the real sender code, sign-off, Got it, compliance, trends, search).
 - Local Postgres used during development: Postgres 16 on port 54322, user `postgres`.
 
 ## 9. Known limits and ideas not built
@@ -234,9 +294,12 @@ Key technical points (all in `CLAUDE.md` too):
 - Dragging tasks from the Today list doesn't work on phones (use **+**); blocks can be moved by touch.
 - Images removed from a note's text stay in storage until the page is deleted.
 - Copying an image from one page into another: people who can't open the first page can't see it.
-- Notes search is by page title only.
+- Search uses simple word matching (no ranking by relevance, no typo tolerance); 40 tasks / 30 pages max.
+- Phone alerts: the browser can't be tested against Google/Apple from here; the encryption is verified with the
+  reference decoder. Delivery on iPhone requires the Home Screen app. Alerts show task titles on lock screens.
+- Compliance calendar dates come from the repeating task's schedule; a one-off shift is done on that occurrence's task.
 - No email notifications; no file previews beyond images.
-- Repeating tasks only create the next one when the current one is done (an unfinished one simply goes overdue).
+- Repeating tasks only create the next one when the current one is done/signed off (an unfinished one simply goes overdue).
 - Month-end: only the owner can tick a line (reassign it to tick on someone's behalf). The old app's
   declaration lists were not imported (his call, "decide later").
 - Supabase Free plan has **no backups**: the Excel exports are his only copy of Workspace data.

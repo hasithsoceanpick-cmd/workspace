@@ -78,7 +78,8 @@ await su('delete from notifications');
 await su('select public.run_deadline_check()');
 ok((await notes(A, 'overdue')).length === 1, 'helper told about a missed deadline');
 await as(K, `update tasks set status='done' where id=$1`, [t2]);
-ok((await notes(A, 'done')).length === 1, 'helper told when the owner completes it');
+await as(H, `update tasks set status='done' where id=$1`, [t2]);   // signed off by whoever gave it
+ok((await notes(A, 'signed_off')).length === 1, 'helper told when the task is finished and signed off');
 r = await as(N, `delete from task_helpers where task_id=$1 and user_id=$2`, [t1, A]);
 ok(r.count === 1 && await sees(A, 'tasks', 'id=$1', [t1]) === 0, 'senior removes helper; they lose access');
 await as(H, `insert into task_helpers (task_id, user_id) values ($1, $2)`, [t1, N]);

@@ -21,8 +21,11 @@ Runs on **Supabase** (database + logins) and **Vercel** (hosting), both on free 
 | **Tasks:** add helpers | Anyone in that department | Anyone in own department | Self + Members | — |
 | **Today:** look at someone's day (read-only) | Anyone | Anyone in own department | Members | — |
 | **Notes:** read | Every page, including private ones | Own + shared with them | Own + shared with them | Own + shared with them |
-| **Who's on what, Weekly summary** | ✓ | ✓ | ✓ (self + Members) | — |
+| **Sign off finished work** | Work they gave (any department) | Work they gave + anyone's in the department | Work they gave | Work they gave |
+| **Who's on what, Reports (weekly summary, trends)** | ✓ | ✓ | ✓ (self + Members) | — |
 | **Month-end declaration** (where switched on) | Manage the list | Manage, review, **approve** | Manage, **review** | Tick own lines |
+| **Compliance calendar** (where switched on) | Add / change obligations | Add / change obligations | Add / change obligations | See it; own their tasks |
+| **Phone alerts** | Set up (Admin → Phone alerts) | Turn on per phone | Turn on per phone | Turn on per phone |
 
 Your admin login is your normal account. You're also Finance's Manager, and the
 department switcher lets you step into any other department. Being admin is set in the
@@ -30,10 +33,20 @@ database only: no screen in the app can make someone else an admin.
 
 **How departments are kept apart.** Every record carries its department, and the
 database itself refuses to return another department's data. That holds even if
-someone pokes at the API directly. 200+ automated checks cover this (`tests/`).
+someone pokes at the API directly. 300+ automated checks cover this (`tests/`).
 Files and screenshots sit in private storage behind the same rules (10 MB per file).
 
 ---
+
+## On phones (install it like an app)
+
+- Open the Workspace link on the phone → tap your picture (top right) → **Install app**.
+  Android/Chrome installs it straight away; on **iPhone** use Safari → **Share** → **Add to Home Screen**.
+  It then opens full-screen from its own icon, and once opened it still starts when the signal drops.
+- **Phone alerts**: in the same menu, **Phone alerts on this device** → On. From then on, whatever lands in
+  your bell also pops up on that phone (tapping it opens the task). On iPhone this works once the app is on the
+  Home Screen (iOS 16.4 or later). Signing out stops alerts on that phone.
+- The admin sets phone alerts up once in **Admin console → Phone alerts** (it shows each step).
 
 ## The Tasks app
 
@@ -43,9 +56,21 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
   executives can pick a person to see their day (read-only).
 - **Who's on what** (Managers, Senior Executives): a column per person with the work they're carrying,
   overdue first; drag a card to someone else to hand it over. Switch to *Table* for the numbers.
-- **Weekly summary** (Managers, Senior Executives): per person for any week, what was done (on time / late),
-  whose deadlines moved, and what's overdue now. Managers get a bell alert every Monday. Export to Excel.
+- **Reports** (Managers, Senior Executives):
+  - **Weekly summary**: per person for any week, what was finished (on time / late), whose deadlines moved,
+    and what's overdue now. Managers get a bell alert every Monday. Export to Excel.
+  - **Trends**: month by month per person — on time %, finished, missed, deadlines moved, sent back, and how
+    long they take to open new work — colour-coded, with a department total. Export to Excel.
 - **Tasks**: lists grouped Overdue / Today / Tomorrow / This week / Next week / Later. Tick to finish. Quick-add bar.
+- **Sign-off (maker → checker)**: when someone finishes a task **you gave them**, it comes back to you under
+  **Waiting for your sign-off**. **Sign off** (one tick) or **Send back** with what needs fixing. Managers can sign off
+  anything in their department. Per task you can choose *Sign-off: Not needed*. Repeating tasks create the next one
+  when signed off. Finished-but-waiting work doesn't count as late.
+- **Got it**: new work someone gives you shows **New** until you open it and press **Got it** (or start it). Whoever
+  gave it sees *Not opened yet* / *opened 09:12*. Next morning there's a reminder for anything still unopened.
+- **Early reminder**: per task, *remind me 1 day … 1 month before* the deadline.
+- **Search everything**: the magnifier in the top bar, or **Ctrl+K**. Finds words in task titles, notes, comments,
+  checklist steps and note pages — only what you could already open.
 - **Calendar**: Month view, and a Week view laid out as *people × days*. Drag a task to move its deadline, or into someone else's row to hand it over.
 - **Day review**: any date, past or present: who completed, started or moved what, comments, and what was due and missed.
 - **Team**: workload per person (open, overdue, due today, done this week).
@@ -59,7 +84,7 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
 - **Helpers**: a task has one owner and can have helpers. Managers and senior executives add them.
   Helpers see the task under *Helping on* and on their calendar, get its alerts, and can comment,
   tick steps and add files. Only the owner (or the person who assigned it) marks it done or moves the deadline.
-- **Notifications**: assigned to you, added as a helper, deadline moved, deadline missed (checked every morning at 7:00), due today, completed, waiting, comments.
+- **Notifications**: assigned to you, added as a helper, deadline moved, deadline missed (checked every morning at 7:00), due today, coming up (early reminder), not opened yet, finished — please sign off, signed off, sent back, waiting, comments.
 
 ## The Notes app
 
@@ -76,6 +101,9 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
   a due day. Each month a senior executive or the manager starts the month, which copies the list. Owners tick
   their own lines and add remarks; when every line is ticked a senior executive marks it **reviewed** and the
   manager **approves**, which locks the month. Reminders on the due date and when overdue. Export to Excel.
+- **Compliance calendar** (for Finance): every recurring statutory deadline (VAT, EPF/ETF, renewals …) with its owner,
+  next deadline, days left and an on-time track record; *Next 12 months* shows the whole year. Each obligation is a
+  high-priority repeating task with an early reminder, so finishing it schedules the next. You enter the dates.
 - **Daily notes**: an end-of-day note per person, shown in Day review.
 
 ---
@@ -91,6 +119,8 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
    4. `04_daily_check.sql`. If it complains about `pg_cron`, enable **Integrations → Cron**, then run it again.
    5. `05_app_notes.sql`
    6. `06_feature_month_end.sql`
+   7. `07_push.sql` (phone alerts)
+   8. `08_feature_compliance.sql`
 3. **Authentication → Sign In / Providers → Email** → turn **Confirm email** OFF → Save.
 4. Click **Connect** and copy the **Project URL** and the **Publishable key** (`sb_publishable_…`).
 
@@ -141,6 +171,12 @@ When a change needs a database update, it comes as a file in `supabase/updates/`
 | `001_delete_people.sql` | Decline / Delete buttons in Admin → People |
 | `002_helpers_checklist_files_today_notes.sql` | Helpers, checklists, files & screenshots, Today planner, Notes app |
 | `003_history_repeat_month_end.sql` | Deadline history, repeating tasks, Monday summary alert, older logins, Month-end declaration |
+| `004_alerts_signoff_compliance_search.sql` | Phone alerts, sign-off, Got it, early reminders, Compliance calendar, Trends, search (includes 003) |
+
+**Phone alerts also need the sender** (once): Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor** →
+name it `workspace-push` → paste `supabase/functions/workspace-push/index.ts` (or use *Copy sender code* in
+Admin → Phone alerts) → **Deploy** → in the function's **Details**, turn **Verify JWT** off. Then Admin → Phone alerts →
+**Turn on phone alerts** → **Send a test**.
 
 Then update the code on GitHub **keeping the folders** (`src/`, `supabase/`, …): repository page →
 **Add file → Upload files** → select everything in the extracted project folder and **drag** it into
@@ -170,5 +206,6 @@ npm run dev
 
 `src/platform` holds the shell, `src/apps/<key>` the apps, `src/features/<key>` the
 department features, and `supabase/` the numbered SQL (re-runnable). Database tests:
-`tests/README.md`; browser tests: `tests/e2e/README.md`. Architecture rules: `CLAUDE.md`.
+`tests/README.md`; browser tests: `tests/e2e/README.md`; the phone-alert sender: `tests/push/run.sh`.
+Architecture rules: `CLAUDE.md`.
 Project history, decisions and how to carry on: `HANDOFF.md`.

@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — "Month-end declaration" department feature (step 6 of 6)
+--  WORKSPACE — "Month-end declaration" department feature (step 6 of 8)
 --  Run after 02_app_tasks.sql. Safe to run again.
 --
 --  A monthly self-declaration checklist. A master list of lines (MEC =

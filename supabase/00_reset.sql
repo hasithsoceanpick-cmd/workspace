@@ -1,7 +1,7 @@
 -- =====================================================================
 --  WORKSPACE — clean slate (only if an earlier setup attempt is in the way)
 --  Removes every table, rule and scheduled job this app (or the earlier
---  "Team Tasks" version) created, so 01–06 can run fresh. Tables from other
+--  "Team Tasks" version) created, so 01–08 can run fresh. Tables from other
 --  apps (for example an older "notes" table) are left alone.
 --  ⚠ Deletes all app data in this project. Use it on a new project only.
 -- =====================================================================
@@ -9,6 +9,7 @@
 drop trigger if exists on_auth_user_created on auth.users;
 
 drop table if exists
+  public.compliance_items, public.workspace_push_log, public.workspace_push_config, public.workspace_push_subscriptions,
   public.month_end_entries, public.month_end_periods, public.month_end_items,
   public.notes_task_links, public.notes_files, public.notes_shares, public.notes_pages,
   public.time_blocks, public.task_attachments, public.task_checklist, public.task_helpers,
@@ -37,7 +38,12 @@ begin
       'notes_shares_after','notes_pages_deleted','ensure_profile',
       'month_end_on','month_end_lead','month_end_items_before','month_end_periods_before',
       'month_end_entries_before','month_end_label','month_end_entries_after','month_end_periods_after',
-      'month_end_start','month_end_check'])
+      'month_end_start','month_end_check',
+      'can_check_task','task_checker_ids','tasks_send_back','tasks_search','tasks_trends','notes_search',
+      'workspace_push_endpoint_ok','workspace_push_title','workspace_push_post','workspace_push_cleanup',
+      'workspace_push_notify','workspace_push_public_key','workspace_push_save','workspace_push_forget',
+      'workspace_push_setup','workspace_push_enable','workspace_push_status','workspace_push_test','workspace_push_result',
+      'compliance_on','compliance_lead','compliance_items_before','compliance_add'])
   loop
     execute 'drop function if exists ' || r.sig || ' cascade';
   end loop;

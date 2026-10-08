@@ -62,10 +62,12 @@ await as(H, `insert into task_helpers (task_id, user_id) values ($1, $2)`, [rt.i
 await as(K, `update task_checklist set done=true where task_id=$1`, [rt.id]);
 await su('delete from notifications');
 r = await as(K, `update tasks set status='done' where id=$1 returning next_task_id`, [rt.id]);
+ok((await su(`select next_task_id from tasks where id=$1`, [rt.id]))[0].next_task_id === null, 'waiting for sign-off: no next one yet');
+await as(H, `update tasks set status='done' where id=$1`, [rt.id]);      // signed off
 const n1 = (await su(`select next_task_id from tasks where id=$1`, [rt.id]))[0].next_task_id;
 const next1 = (await su(`select * from tasks where id=$1`, [n1]))[0];
 ok(!!next1 && next1.due_date === '2026-02-28' && next1.status === 'todo' && next1.assignee_id === K && next1.department_id === FIN,
-   'completing it creates the next one (31 Jan → 28 Feb)');
+   'signing it off creates the next one (31 Jan → 28 Feb)');
 ok(next1.created_by === H && next1.repeat === 'monthly' && next1.repeat_n === 1, 'the next one keeps who assigned it and the schedule');
 const steps = await su(`select body, done from task_checklist where task_id=$1 order by position`, [n1]);
 ok(steps.length === 2 && steps.every(s => !s.done), 'its checklist is copied, unticked');
@@ -74,9 +76,11 @@ ok((await notices(A, 'helper')).length === 0, 'without a fresh "added as helper"
 ok((await su(`select count(*)::int n from task_activity where task_id=$1 and kind='repeated'`, [n1]))[0].n === 1, 'the history says where it came from');
 await as(K, `update tasks set status='todo' where id=$1`, [rt.id]);
 await as(K, `update tasks set status='done' where id=$1`, [rt.id]);
+await as(H, `update tasks set status='done' where id=$1`, [rt.id]);
 ok((await su(`select count(*)::int n from tasks where title='WHT schedule'`))[0].n === 2, 'reopening and finishing again does not create a duplicate');
 await as(K, `update tasks set due_date='2026-03-05' where id=$1`, [n1]);
 await as(K, `update tasks set status='done' where id=$1`, [n1]);
+await as(H, `update tasks set status='done' where id=$1`, [n1]);
 const n2 = (await su(`select next_task_id from tasks where id=$1`, [n1]))[0].next_task_id;
 ok((await su(`select due_date from tasks where id=$1`, [n2]))[0].due_date === '2026-03-31', 'a moved deadline does not shift the schedule (→ 31 Mar)');
 const wk = (await as(K, `insert into tasks (title, assignee_id, due_date, repeat) values ('Petty cash', $1, '2026-10-05', 'weekly') returning id`, [K])).rows[0].id;

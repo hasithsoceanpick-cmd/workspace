@@ -42,3 +42,20 @@ alter table storage.objects enable row level security;
 grant usage on schema storage to anon, authenticated, service_role;
 grant select, insert, update, delete on storage.objects to authenticated, service_role;
 grant select on storage.buckets to authenticated, service_role;
+
+-- pg_net stand-in: requests are recorded; the e2e stand-in (mock-supabase.mjs) delivers them and writes responses
+create schema if not exists net;
+create table if not exists net.mock_requests (
+  id bigserial primary key, url text, body jsonb, headers jsonb, timeout_milliseconds int,
+  done boolean not null default false, created timestamptz not null default now()
+);
+create table if not exists net._http_response (
+  id bigint primary key, status_code int, content_type text, headers jsonb, content text,
+  timed_out boolean, error_msg text, created timestamptz not null default now()
+);
+create or replace function net.http_post(url text, body jsonb default '{}'::jsonb, params jsonb default '{}'::jsonb,
+  headers jsonb default '{"Content-Type": "application/json"}'::jsonb, timeout_milliseconds integer default 5000)
+returns bigint language sql as $$
+  insert into net.mock_requests (url, body, headers, timeout_milliseconds)
+  values (url, body, headers, timeout_milliseconds) returning id
+$$;

@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — morning deadline check (step 4 of 6)
+--  WORKSPACE — morning deadline check (step 4 of 8)
 --
 --  Every morning at 7:00 am Sri Lanka time it:
 --    • sends "Missed deadline" alerts for anything not done by its due date

@@ -4,6 +4,7 @@ import http from 'node:http';
 import pg from 'pg';
 import busboy from 'busboy';
 import crypto from 'node:crypto';
+import ece from 'http_ece';
 
 pg.types.setTypeParser(1082, (v) => v); // keep DATE as 'YYYY-MM-DD' like PostgREST
 pg.types.setTypeParser(20, (v) => Number(v)); // bigint → number like PostgREST
@@ -213,6 +214,10 @@ const server = http.createServer(async (req, res) => {
       return send(res, 404, { message: 'storage not mocked: ' + ep });
     }
 
+    // ---------------- test-only: fake phones for the phone-alert tests ----------------
+    if (path === '/__test/push-device') return send(res, 200, newDevice());
+    if (path === '/__test/push-inbox') return send(res, 200, inbox(url.searchParams.get('endpoint')));
+
     // ---------------- rest ----------------
     if (path.startsWith('/rest/v1/')) {
       const claims = readJwt(req.headers.authorization);
@@ -226,7 +231,9 @@ const server = http.createServer(async (req, res) => {
         const fn = ident(rest.slice(4));
         const b = req.method === 'POST' ? await body(req) : {};
         const keys = Object.keys(b);
-        const r = await asRole(claims, (c) => c.query(`select to_json(public.${fn}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(',')})) as r`, keys.map((k) => b[k])));
+        const call = `public.${fn}(${keys.map((k, i) => `${ident(k)} => $${i + 1}`).join(',')})`;
+        const set = (await pool.query('select bool_or(proretset) as s from pg_proc where proname = $1', [fn.replace(/"/g, '')])).rows[0]?.s;
+        const r = await asRole(claims, (c) => c.query(set ? `select coalesce(json_agg(t), '[]') as r from ${call} t` : `select to_json(${call}) as r`, keys.map((k) => b[k])));
         return send(res, 200, r.rows[0].r);
       }
 
@@ -269,3 +276,53 @@ const server = http.createServer(async (req, res) => {
   }
 });
 server.listen(PORT, () => console.log('mock supabase on', PORT));
+
+// ---------- pg_net + push services stand-in ----------
+// The database "calls" the Edge Function through net.http_post (recorded in net.mock_requests). Here we run the
+// REAL function code (supabase/functions/workspace-push/index.ts) on each request; its calls to Google/Apple are
+// answered by fake phones that decrypt the alert with the reference decoder (http_ece), like a real phone would.
+const devices = new Map();   // endpoint -> { ecdh, auth, got: [] }
+function newDevice() {
+  const ecdh = crypto.createECDH('prime256v1');
+  ecdh.generateKeys();
+  const auth = crypto.randomBytes(16);
+  const endpoint = `https://fcm.googleapis.com/fcm/send/e2e-${crypto.randomBytes(6).toString('hex')}`;
+  devices.set(endpoint, { ecdh, auth, got: [] });
+  return { endpoint, p256dh: ecdh.getPublicKey().toString('base64url'), auth: auth.toString('base64url') };
+}
+const inbox = (endpoint) => devices.get(endpoint)?.got ?? [];
+
+const fnPath = new URL('../../supabase/functions/workspace-push/index.ts', import.meta.url);
+let pushFn = null;
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input, init = {}) => {
+  const target = String(input?.url ?? input);
+  const dev = devices.get(target);
+  if (!target.startsWith('https://fcm.googleapis.com/')) return realFetch(input, init);
+  if (!dev) return new Response('', { status: 410 });              // a phone that unsubscribed
+  if (!/^vapid t=.+, k=/.test(init.headers?.Authorization ?? '')) return new Response('no vapid', { status: 403 });
+  const plain = ece.decrypt(Buffer.from(init.body), { version: 'aes128gcm', privateKey: dev.ecdh, authSecret: dev.auth });
+  dev.got.push(JSON.parse(plain.toString('utf8')));
+  return new Response('', { status: 201 });
+};
+
+async function deliverPushRequests() {
+  try {
+    const { rows } = await pool.query('update net.mock_requests set done = true where not done returning *');
+    for (const r of rows) {
+      let status = 404, content = '{"code":"NOT_FOUND","message":"Requested function was not found"}';
+      if (r.url.endsWith('/functions/v1/workspace-push')) {
+        pushFn ??= await import(fnPath.href);
+        const out = await pushFn.handle(new Request(r.url, { method: 'POST', body: JSON.stringify(r.body) }));
+        status = out.status;
+        content = await out.text();
+      }
+      await pool.query('insert into net._http_response (id, status_code, content_type, content, timed_out) values ($1, $2, $3, $4, false) on conflict (id) do nothing',
+        [r.id, status, 'application/json', content]);
+    }
+  } catch (e) {
+    if (!/does not exist/.test(e.message)) console.error('push stand-in:', e.message);
+  }
+  setTimeout(deliverPushRequests, 250);
+}
+deliverPushRequests();

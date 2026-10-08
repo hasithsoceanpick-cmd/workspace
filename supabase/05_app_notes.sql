@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — Notes app (step 5 of 6)
+--  WORKSPACE — Notes app (step 5 of 8)
 --  Run after 02_app_tasks.sql. Safe to run again.
 --
 --  Pages and sub-pages. A page is private to its owner unless the owner
@@ -301,6 +301,30 @@ create policy "notes files: delete" on storage.objects for delete to authenticat
   using (bucket_id = 'workspace-files' and public.notes_file_ok(name, true));
 
 -- ---------- Permissions -------------------------------------------------
+-- >>> notes_search
+-- ---------- Search (Ctrl+K): titles and page text, only pages the person can open ----
+create or replace function public.notes_search(p_q text, p_dept uuid)
+returns table (id bigint, title text, parent_id bigint, found_in text, snippet text)
+language sql stable set search_path = public as $$
+  with q as (
+    select '%' || replace(replace(replace(trim(coalesce(p_q, '')), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pat
+  )
+  select p.id, p.title, p.parent_id,
+         case when p.title ilike q.pat then 'title' else 'text' end,
+         case when p.title ilike q.pat then '' else b.body end
+  from public.notes_pages p
+  cross join q
+  cross join lateral (select coalesce(string_agg(x #>> '{}', ' '), '') as body
+                        from jsonb_path_query(p.content, 'strict $.**.text') x) b
+  where p.department_id = p_dept and length(trim(coalesce(p_q, ''))) >= 2
+    and (p.title ilike q.pat or b.body ilike q.pat)
+  order by (p.title ilike q.pat) desc, p.updated_at desc
+  limit 30
+$$;
+revoke execute on function public.notes_search(text, uuid) from public, anon;
+grant  execute on function public.notes_search(text, uuid) to authenticated;
+-- <<< notes_search
+
 revoke all on public.notes_pages, public.notes_shares, public.notes_files, public.notes_task_links
   from anon, authenticated;
 grant select, insert, update, delete on public.notes_pages            to authenticated;

@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — "Daily notes" department feature (step 3 of 6)
+--  WORKSPACE — "Daily notes" department feature (step 3 of 8)
 --  Run after 02_app_tasks.sql. Safe to run again.
 --
 --  An example of a DEPARTMENT-ONLY feature: each person writes a short

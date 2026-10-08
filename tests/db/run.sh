@@ -10,8 +10,8 @@ psql "$URL" -q -v ON_ERROR_STOP=1 -f tests/db/mock_supabase.sql
 # like the live project: a table left by an older app that Workspace must never touch
 psql "$URL" -q -v ON_ERROR_STOP=1 -c "create table if not exists public.notes (id uuid primary key default gen_random_uuid(), title text);
   insert into public.notes (title) select 'older app' where not exists (select 1 from public.notes);"
-for f in supabase/01_platform.sql supabase/02_app_tasks.sql supabase/03_feature_daily_notes.sql supabase/05_app_notes.sql supabase/06_feature_month_end.sql; do
+for f in supabase/01_platform.sql supabase/02_app_tasks.sql supabase/03_feature_daily_notes.sql supabase/05_app_notes.sql supabase/06_feature_month_end.sql supabase/07_push.sql supabase/08_feature_compliance.sql; do
   psql "$URL" -q -v ON_ERROR_STOP=1 -f "$f" > /dev/null
 done
 DATABASE_URL="$URL" node tests/db/isolation.test.mjs && DATABASE_URL="$URL" node tests/db/features.test.mjs \
-  && DATABASE_URL="$URL" node tests/db/round3.test.mjs
+  && DATABASE_URL="$URL" node tests/db/round3.test.mjs && DATABASE_URL="$URL" node tests/db/round5.test.mjs

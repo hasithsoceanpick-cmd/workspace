@@ -1,5 +1,5 @@
 -- =====================================================================
---  WORKSPACE — platform setup (step 1 of 6)
+--  WORKSPACE — platform setup (step 1 of 8)
 --  Departments, people, the admin, which apps each department / person
 --  can use, and per-department feature switches.
 --

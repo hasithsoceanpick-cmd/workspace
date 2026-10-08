@@ -134,7 +134,7 @@ async def main():
             await h.click('.dept-switch .switcher'); await h.click('.drop-item:has-text("Finance")'); await h.wait_for_timeout(1000)
         await h.click('.bell .icon-btn'); await h.wait_for_timeout(300)
         await h.screenshot(path=f'{OUT}/b3_bell_admin.png')
-        await h.locator('.notice-row:has-text("completed \\"Exit interview summary\\"")').first.click()
+        await h.locator('.notice-row:has-text("finished \\"Exit interview summary\\"")').first.click()
         await h.wait_for_timeout(1500)
         title_val = await h.locator('.drawer .title-input').input_value() if await h.locator('.drawer .title-input').count() else ''
         check('HR' in await h.locator('.dept-switch .switcher').inner_text() and title_val == 'Exit interview summary',

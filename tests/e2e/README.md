@@ -20,10 +20,16 @@ demo (`seed.mjs`: Finance and HR, logins `*@demo.lk` / `password1`), then runs:
 | `test_admin_notes.py` | admin turns Notes on for chosen people |
 | `test_new_features.py` | Today planner, helpers, checklists, screenshots/files/links, Notes (sharing, sub-pages, links to tasks, edit conflicts), phone layout |
 | `test_round3.py` | deadline history on cards, repeating tasks, Who's on what board, weekly summary, Excel exports (opened with openpyxl), older logins, Month-end declaration end to end |
+| `test_round5.py` | install as an app (manifest, icons, service worker, offline start, iPhone steps), phone alerts end to end (admin set-up, test alert, a member's phone gets a real encrypted alert, tapping opens the task, sign-out stops alerts), Got it, sign-off and send back, Compliance calendar (add, year view, export, members/HR), Trends (+ export), Ctrl+K search, phone layout |
 | `test_first_run.py` | brand-new install: first sign-up becomes admin |
 
 Needs Node 20+, `psql`, and Python 3 with `pip install playwright pillow openpyxl` then
 `playwright install chromium`. Screenshots are saved in `tests/e2e/shots/`.
+
+**Phone alerts in the tests:** headless Chrome can't reach Google's push service, so test devices get a stand-in
+subscription with real keys. The stand-in runs the **real** Edge Function code on each `pg_net` call, and the
+fake push service decrypts what it receives with the reference decoder (`http_ece`) — so the database trigger,
+the sender's encryption and signing, and the app's handling are all exercised; only the last hop to Google is skipped.
 
 **Note on the stand-in:** it supports only the parts of Supabase this app uses. If you add
 a new kind of query (for example embedded joins) and a test fails with "unsupported

@@ -6,6 +6,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",
     "busboy": "^1.6.0",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "http_ece": "^1.2.1"
   }
 }

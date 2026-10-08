@@ -71,7 +71,7 @@ async def main():
         await h.click('button:has-text("Create task")'); await h.wait_for_timeout(1500)
         vrow = h.locator('.task-row:has(.tr-title:text-is("VAT return"))')
         check(await vrow.locator('.pill.repeat').count() == 1, 'a repeating task shows ⟳ Monthly')
-        await vrow.locator('.check').click()
+        await vrow.locator('.check').click(); await h.wait_for_timeout(900)
         t = await toast(h)
         check('next one has been created' in t, f'completing it says the next one was created ({t})')
         await h.wait_for_timeout(1500)

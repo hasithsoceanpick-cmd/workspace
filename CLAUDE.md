@@ -14,11 +14,15 @@ src/apps/<key>/    one folder per app (today: tasks, notes, admin). Default expo
 src/platform/slots.ts  places where one app shows a panel inside another (e.g. Notes inside a task).
 src/platform/files.ts  upload / open / delete files in the private "workspace-files" bucket.
 src/platform/excel.ts  plain Excel downloads (bold frozen header, real dates, no formulas) for any app.
+src/platform/pwa.ts, push.ts, public/sw.js  installing as an app, and phone alerts on this device.
+src/platform/Search.tsx  Ctrl+K search; each app adds a provider to SEARCH in slots.ts.
 src/features/<key>/ department-only features. Registered in src/features/registry.ts.
 supabase/          numbered SQL files, run in order in the Supabase SQL Editor.
+supabase/functions/workspace-push/  the Edge Function that delivers phone alerts (pasted into the dashboard).
 supabase/templates/ copy these for a new app or a new department feature.
 tests/db/          database isolation tests (see tests/README.md).
 tests/e2e/         browser tests against a local stand-in for Supabase (see tests/e2e/README.md).
+tests/push/        the Edge Function run in real Deno.
 tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supabase.
 ```
 
@@ -85,6 +89,15 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
    existing table, and `create or replace function` would overwrite someone else's function.
    Never alter, drop or add policies to tables this app didn't create. Update 002 ends with a
    report listing anything in the database that isn't Workspace's.
+16. **Phone alerts come free with notifications.** Anything inserted into `notifications` (through `notify(...)`)
+   is pushed to that person's devices by the `workspace_push_notify` trigger. Never call `pg_net` or the
+   Edge Function from app code. A new notification kind should get a short title in `workspace_push_title`
+   (07_push.sql) and a dot colour in styles.css (`.notice-row.k-<kind>`).
+17. **The service worker must never cache Supabase calls** or anything user-specific: it only handles
+   same-origin GETs (the page and hashed `/assets/`). Bump `VERSION` in `public/sw.js` only if its caching changes.
+18. **Task status:** `review` means the owner finished and it waits for sign-off. Use `finished()` / `isLate()`
+   from `src/apps/tasks/labels.ts` instead of comparing with `'done'`: finished-but-waiting work isn't late and
+   isn't the owner's open workload. When the owner finished is `submitted_at` (falls back to `completed_at`).
 
 ## Adding a new app
 
@@ -107,6 +120,8 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
 
 `daily_notes` is the small worked example of a department feature; `month_end` (06_feature_month_end.sql,
 src/features/month-end/) is the full one: master list → monthly copy → owner ticks → review → approve.
+`compliance` (08_feature_compliance.sql, src/features/compliance/) shows a feature built on the Tasks app's own data:
+it links rows to repeating task series and uses the Tasks store (`useTaskApp`) for what the person can see.
 A feature's alerts use `notify(..., app_key = the app it extends, kind = its own kind)`; list that kind in
 the feature's `noticeKinds` so the bell opens its page. App pages opened from alerts go in `kindPages`.
 
@@ -115,6 +130,12 @@ the feature's `noticeKinds` so the bell opens its page. App pages opened from al
 - The session flag `app.system` (`set_config('app.system','on',true)`) marks the database's own
   housekeeping (the daily check, creating the next repeating task). Task triggers skip their user rules and
   alerts while it is on; always switch it back off in the same function.
+
+## Search
+
+Each app that wants to be searchable adds a small provider (`src/apps/<key>/search.ts`) to `SEARCH` in
+`src/platform/slots.ts`, backed by a `<key>_search(q, dept)` SQL function **without** `security definer`, so
+row-level security decides what can be found. Escape `%`, `_` and `\` in the pattern (see `tasks_search`).
 
 ## Conventions
 

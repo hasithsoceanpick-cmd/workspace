@@ -5,7 +5,8 @@ import pg from 'pg';
 const URL = process.env.MOCK_URL || 'http://localhost:54321';
 const db = new pg.Pool({ connectionString: process.env.DATABASE_URL || 'postgres://postgres@127.0.0.1:54322/postgres' });
 await db.query(`truncate notifications, task_activity, task_comments, time_blocks, task_helpers, task_checklist, task_attachments,
-  notes_task_links, notes_files, notes_shares, notes_pages, tasks, daily_notes, app_members, department_apps, department_features restart identity cascade;
+  notes_task_links, notes_files, notes_shares, notes_pages, tasks, daily_notes, app_members, department_apps, department_features,
+  workspace_push_subscriptions, workspace_push_config, workspace_push_log restart identity cascade;
   delete from storage.objects;
   delete from platform_admins; delete from profiles; delete from departments; delete from auth.users;`);
 
@@ -73,5 +74,8 @@ must(await A.sb.from('daily_notes').insert({ day: day(0), body: 'September suppl
 
 await db.query(`with x as (select set_config('app.system','on',true))
   update tasks set created_at = now() - interval '3 days' from x`);
+// everyone has seen their work already, except one task Kasun hasn't opened yet ("Got it" tests)
+await db.query(`with x as (select set_config('app.system','on',true))
+  update tasks set acknowledged_at = created_at from x where title <> 'Clear unreconciled items list'`);
 console.log('seeded', { FIN, HR, tasks: (await db.query('select count(*) from tasks')).rows[0].count });
 await db.end();
