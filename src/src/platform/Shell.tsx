@@ -11,6 +11,7 @@ import Dropdown from './Dropdown';
 import Bell from './Bell';
 import UserMenu from './UserMenu';
 import Search from './Search';
+import { TOP_BAR } from './slots';
 
 export default function Shell() {
   const { isAdmin, dept, departments, setDeptId, myAppKeys, apps, profiles, toasts } = usePlatform();
@@ -97,6 +98,7 @@ export default function Shell() {
 
         <div className="topbar-right">
           {dept && !wantsAdmin && <Search />}
+          {dept && !wantsAdmin && TOP_BAR.filter(t => myAppKeys.includes(t.app)).map(t => <t.component key={t.app} />)}
           <Bell />
           <UserMenu />
         </div>

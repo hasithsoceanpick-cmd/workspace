@@ -28,7 +28,7 @@ const prioRank = { high: 0, normal: 1, low: 2 } as const;
 type Drag = { id: number; mode: 'move' | 'resize'; offset: number; x: number; y: number; moved: boolean };
 
 export default function TodayPage({ params }: { params: Params }) {
-  const { me, inDept, isLead, team, tasks, person, openTask, helpersOf, fail, dept } = useTaskApp();
+  const { me, inDept, isLead, team, tasks, person, openTask, helpersOf, fail, dept, inInbox } = useTaskApp();
   const td = today();
   const d = params.d || td;
   const who = isLead && params.who && team.some(p => p.id === params.who) ? params.who
@@ -72,7 +72,7 @@ export default function TodayPage({ params }: { params: Params }) {
 
   // Work this person can plan: their own open tasks and tasks they help on
   const planList = useMemo(() => {
-    const open = tasks.filter(t => !finished(t) && (t.assignee_id === who || helpersOf(t.id).includes(who)))
+    const open = tasks.filter(t => !finished(t) && !inInbox(t) && (t.assignee_id === who || helpersOf(t.id).includes(who)))
       .sort((a, b) => a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id);
     const groups = [
       { label: 'Overdue', tone: 'danger', items: open.filter(t => t.due_date < d) },
@@ -81,7 +81,7 @@ export default function TodayPage({ params }: { params: Params }) {
       { label: 'Later', tone: '', items: open.filter(t => t.due_date > addDays(d, 7)) },
     ];
     return groups.filter(g => g.items.length);
-  }, [tasks, who, helpersOf, d, td]);
+  }, [tasks, who, helpersOf, d, td, inInbox]);
 
   const plannedAt = useMemo(() => {
     const m = new Map<number, number>();

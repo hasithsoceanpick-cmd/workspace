@@ -12,6 +12,7 @@ import { clipboardFiles } from '../../platform/files';
 import { TASK_PANELS } from '../../platform/slots';
 import Avatar from '../../platform/Avatar';
 import { TaskFiles, useTaskFiles } from './TaskFiles';
+import { ReminderForm } from './Reminders';
 import { Checklist, useChecklist } from './Checklist';
 
 const editable = (t: TaskDraft | Task) => ({
@@ -24,7 +25,7 @@ export default function TaskDrawer() {
   const {
     drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper, isLead, refreshChecklist, myAppKeys, fullView,
-    canCheck, checkerOf, acknowledge, sendBack, refresh,
+    canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark,
   } = store;
   const features = useFeatures('tasks').filter(f => f.taskPanel);
   const panels = TASK_PANELS.filter(p => myAppKeys.includes(p.app));
@@ -56,6 +57,7 @@ export default function TaskDrawer() {
   const [showMoves, setShowMoves] = useState(false);
   const [newHelpers, setNewHelpers] = useState<string[]>([]);
   const [backReason, setBackReason] = useState<string | null>(null);
+  const [reminding, setReminding] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const files = useTaskFiles(task?.id ?? null);
   const steps = useChecklist(task?.id ?? null, refreshChecklist);
@@ -228,7 +230,28 @@ export default function TaskDrawer() {
   const canRemoveFile = (a: { created_by: string | null }) => a.created_by === me.id || (!!task && !readOnly);
 
   return (
-    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}>
+    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}
+      tools={task && (() => {
+        const m = marks(task.id);
+        const involved = task.assignee_id === me.id || task.created_by === me.id || helpersOf(task.id).includes(me.id);
+        return (
+          <>
+            <button type="button" className={`chip-btn ${m.pinned ? 'on' : ''}`} onClick={() => setMark(task.id, { pinned: !m.pinned })}
+              title="Pinned tasks stay at the top of your list">{m.pinned ? '★ Pinned' : '☆ Pin'}</button>
+            {!involved && (
+              <button type="button" className={`chip-btn ${m.following ? 'on' : ''}`} onClick={() => setMark(task.id, { following: !m.following })}
+                title="Get this task's alerts">{m.following ? '✓ Following' : 'Follow'}</button>
+            )}
+            <button type="button" className={`chip-btn ${reminding ? 'on' : ''}`} onClick={() => setReminding(r => !r)} title="Set a reminder about this task">⏰ Remind</button>
+          </>
+        );
+      })()}>
+      {task && reminding && (
+        <div className="drawer-remind"><ReminderForm taskId={task.id} defaultText={task.title} onSaved={() => setReminding(false)} /></div>
+      )}
+      {task?.escalated_at && task.status !== 'done' && task.status !== 'review' && (
+        <div className="esc-banner">Escalated to the manager {fmtStamp(task.escalated_at)} — {daysBetween(task.due_date, today())} days past its deadline.</div>
+      )}
       {readOnly && (
         <div className="helper-banner">You're helping on this task. You can tick steps, add files and comment. {firstName(nameOf(task!.assignee_id))} marks it done.</div>
       )}
@@ -491,8 +514,8 @@ export default function TaskDrawer() {
   );
 }
 
-function Frame({ title, onClose, children, onPaste }: {
-  title: string; onClose: () => void; children: ReactNode; onPaste?: (e: ClipboardEvent) => void;
+function Frame({ title, onClose, children, onPaste, tools }: {
+  title: string; onClose: () => void; children: ReactNode; onPaste?: (e: ClipboardEvent) => void; tools?: ReactNode;
 }) {
   return (
     <>
@@ -500,6 +523,7 @@ function Frame({ title, onClose, children, onPaste }: {
       <aside className="drawer" role="dialog" aria-label={title} onPaste={onPaste}>
         <div className="drawer-head">
           <span className="muted">{title}</span>
+          <span className="drawer-tools">{tools}</span>
           <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="drawer-body">{children}</div>

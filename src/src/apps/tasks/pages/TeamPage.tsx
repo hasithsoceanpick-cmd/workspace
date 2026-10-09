@@ -93,7 +93,7 @@ function Board({ params }: { params: Params }) {
     const prog = progressOf(t.id);
     const canDrag = !helpingFor && !helperOnly(t);
     return (
-      <div key={`${t.id}-${helpingFor ?? ''}`} className={`bcard ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${helpingFor ? 'helping' : ''}`}
+      <div key={`${t.id}-${helpingFor ?? ''}`} className={`bcard ${late ? 'late' : ''} ${late && t.escalated_at ? 'escalated' : ''} ${t.priority === 'high' ? 'high' : ''} ${helpingFor ? 'helping' : ''}`}
         draggable={canDrag}
         onDragStart={e => { e.dataTransfer.setData('text/x-board', String(t.id)); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={() => openTask(t.id)} role="button" tabIndex={0}
@@ -104,6 +104,7 @@ function Board({ params }: { params: Params }) {
             {late ? `${daysBetween(t.due_date, td)}d late` : fmtDue(t.due_date)}
           </span>
           {(t.status === 'doing' || t.status === 'waiting') && <span className={`pill s-${t.status}`}>{statusLabel(t.status)}</span>}
+          {late && t.escalated_at && <span className="pill esc">Escalated</span>}
           {t.priority === 'high' && <span className="pill high">High</span>}
           {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`}>☑ {prog.done}/{prog.total}</span>}
           {t.repeat && <span className="pill repeat" title={`Repeats ${repeatLabel(t.repeat).toLowerCase()}`}>⟳</span>}

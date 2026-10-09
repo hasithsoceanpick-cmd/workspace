@@ -3,7 +3,7 @@ import { supabase } from '../../supabase';
 import { usePlatform } from '../../platform/store';
 import { removeFiles } from '../../platform/files';
 import type { Profile } from '../../platform/types';
-import type { Task, TaskDraft, TaskHelper } from './types';
+import type { Task, TaskDraft, TaskFollow, TaskHelper } from './types';
 
 type DrawerState = { mode: 'edit'; id: number } | { mode: 'new'; defaults: Partial<TaskDraft> } | null;
 
@@ -39,6 +39,12 @@ interface TasksStore {
   /** "Got it": the owner has seen a task someone gave them */
   acknowledge: (id: number) => Promise<void>;
   sendBack: (id: number, reason: string) => Promise<boolean>;
+  /** Given to me by someone else and I haven't pressed Got it yet: lives only in the New tab */
+  inInbox: (t: Task) => boolean;
+  inbox: Task[];
+  /** my pin / follow marks */
+  marks: (taskId: number) => { pinned: boolean; following: boolean };
+  setMark: (taskId: number, patch: { pinned?: boolean; following?: boolean }) => Promise<void>;
   /** checklist progress per task id */
   progressOf: (taskId: number) => { done: number; total: number } | null;
   refreshChecklist: () => Promise<void>;
@@ -62,6 +68,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [helpers, setHelpers] = useState<TaskHelper[]>([]);
   const [steps, setSteps] = useState<{ task_id: number; done: boolean }[]>([]);
+  const [follows, setFollows] = useState<TaskFollow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
 
@@ -77,16 +84,18 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   }, [deptId]);
 
   const refresh = useCallback(async () => {
-    const [t, h] = await Promise.all([
+    const [t, h, f] = await Promise.all([
       supabase.from('tasks').select('*').eq('department_id', deptId).order('due_date').order('id'),
       supabase.from('task_helpers').select('*').eq('department_id', deptId),
+      supabase.from('task_follows').select('*').eq('user_id', me.id),
     ]);
     if (t.error) return fail(t.error);
     setTasks(t.data as Task[]);
     if (h.data) setHelpers(h.data as TaskHelper[]);
+    if (f.data) setFollows(f.data as TaskFollow[]);
     setLoaded(true);
     refreshChecklist();
-  }, [deptId, fail, refreshChecklist]);
+  }, [deptId, fail, refreshChecklist, me.id]);
 
   useEffect(() => {
     (async () => {
@@ -191,6 +200,26 @@ export function TasksProvider({ children }: { children: ReactNode }) {
 
   const canDelete = useCallback((t: Task) => fullView || t.created_by === me.id, [fullView, me.id]);
 
+  const inInbox = useCallback((t: Task) =>
+    t.assignee_id === me.id && !t.acknowledged_at && t.created_by !== me.id && t.status !== 'done' && t.status !== 'review',
+  [me.id]);
+  const inbox = useMemo(() => tasks.filter(inInbox).sort((a, b) => a.due_date.localeCompare(b.due_date)), [tasks, inInbox]);
+
+  const marks = useCallback((id: number) => {
+    const f = follows.find(x => x.task_id === id);
+    return { pinned: !!f?.pinned, following: !!f?.following };
+  }, [follows]);
+  const setMark = useCallback(async (id: number, patch: { pinned?: boolean; following?: boolean }) => {
+    const had = follows.find(x => x.task_id === id);
+    const next = { pinned: patch.pinned ?? !!had?.pinned, following: patch.following ?? !!had?.following };
+    setFollows(fs => had ? fs.map(x => (x.task_id === id ? { ...x, ...next } : x))
+      : [...fs, { task_id: id, user_id: me.id, department_id: deptId, ...next }]);
+    const res = had
+      ? await supabase.from('task_follows').update(next).eq('task_id', id).eq('user_id', me.id)
+      : await supabase.from('task_follows').insert({ task_id: id, ...next });
+    if (res.error) { fail(res.error); refresh(); }
+  }, [follows, me.id, deptId, fail, refresh]);
+
   const canCheck = useCallback((t: Task) =>
     t.assignee_id !== me.id && (isAdmin || (inDept && (t.created_by === me.id || myRole === 'manager'))),
   [me.id, isAdmin, inDept, myRole]);
@@ -234,7 +263,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     inDept, fullView, isLead, team, canAssignTo, tasks, loaded, refresh,
     createTask, updateTask, deleteTask, canDelete,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper,
-    progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack,
+    progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack, inInbox, inbox, marks, setMark,
     drawer,
     openTask: (id) => setDrawer({ mode: 'edit', id }),
     newTask: (defaults = {}) => setDrawer({ mode: 'new', defaults }),

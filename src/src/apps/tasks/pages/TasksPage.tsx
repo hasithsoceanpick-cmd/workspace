@@ -13,7 +13,7 @@ const byDue = (a: Task, b: Task) =>
   a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id;
 
 export default function TasksPage({ params }: { params: Params }) {
-  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf } = useTaskApp();
+  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks } = useTaskApp();
   const [exporting, setExporting] = useState(false);
   async function doExport() {
     setExporting(true);
@@ -27,12 +27,20 @@ export default function TasksPage({ params }: { params: Params }) {
   const show = params.show === 'done' ? 'done' : 'open';
   const q = (params.q ?? '').toLowerCase();
 
+  // work I haven't pressed "Got it" on lives only in the New tab
   const mine = useMemo(() => tasks.filter(t => {
+    if (inInbox(t)) return false;
     if (who === 'me') return t.assignee_id === me.id;
     if (who === 'all') return true;
     if (who === 'byme') return t.created_by === me.id && t.assignee_id !== me.id;
+    if (who === 'following') return marks(t.id).following;
     return t.assignee_id === who;
-  }), [tasks, who, me.id]);
+  }), [tasks, who, me.id, inInbox, marks]);
+
+  // pinned: at the top of my own list (any task I can see)
+  const pinned = useMemo(() => show === 'open' && who === 'me'
+    ? tasks.filter(t => marks(t.id).pinned && !finished(t) && !inInbox(t)).sort((a, b) => a.due_date.localeCompare(b.due_date))
+    : [], [tasks, show, who, marks, inInbox]);
 
   // tasks this person helps on (shown in their own group, never mixed with their own work)
   const helperId = who === 'me' ? me.id : who === 'all' || who === 'byme' ? null : who;
@@ -75,24 +83,24 @@ export default function TasksPage({ params }: { params: Params }) {
       { label: 'Next week', tone: '', test: d => d > endOfWeek && d <= endOfNext && d > addDays(td, 1) },
       { label: 'Later', tone: '', test: d => d > endOfNext },
     ];
-    const sorted = filtered.filter(t => t.status !== 'review').sort(byDue);
+    const sorted = filtered.filter(t => t.status !== 'review' && !pinned.includes(t)).sort(byDue);
     return buckets
       .map(b => ({ label: b.label, tone: b.tone, items: sorted.filter(t => b.test(t.due_date)) }))
       .filter(g => g.items.length);
-  }, [filtered, show, td]);
+  }, [filtered, show, td, pinned]);
 
   const openAll = mine.filter(t => !finished(t));
   const stats = {
     open: openAll.length,
     overdue: openAll.filter(t => t.due_date < td).length,
     today: openAll.filter(t => t.due_date === td).length,
-    fresh: openAll.filter(t => !t.acknowledged_at && t.assignee_id === me.id).length,
+    fresh: inbox.length,
   };
 
   const title =
-    who === 'me' ? 'My tasks' : who === 'all' ? "Everyone's tasks" : who === 'byme' ? 'Assigned by me'
+    who === 'me' ? 'My tasks' : who === 'all' ? "Everyone's tasks" : who === 'byme' ? 'Assigned by me' : who === 'following' ? 'Following'
       : `${firstName(person(who)?.full_name ?? '')}'s tasks`;
-  const showWho = who === 'all' || who === 'byme';
+  const showWho = who === 'all' || who === 'byme' || who === 'following';
 
   // quick add
   const [qa, setQa] = useState({ title: '', due: '', assignee: '' });
@@ -120,7 +128,7 @@ export default function TasksPage({ params }: { params: Params }) {
             <span>{stats.open} open</span>
             {stats.overdue > 0 && <span className="danger">{stats.overdue} overdue</span>}
             {stats.today > 0 && <span className="accent">{stats.today} due today</span>}
-            {stats.fresh > 0 && <span className="accent">{stats.fresh} new</span>}
+            {stats.fresh > 0 && who === 'me' && <a className="accent" href="#/tasks/new">{stats.fresh} new</a>}
             {toSignOff.length > 0 && <span className="warn">{toSignOff.length} to sign off</span>}
           </div>
         </div>
@@ -130,6 +138,7 @@ export default function TasksPage({ params }: { params: Params }) {
               {inDept && <option value="me">My tasks</option>}
               <option value="all">Everyone</option>
               <option value="byme">Assigned by me</option>
+              <option value="following">Following</option>
               <optgroup label="Person">
                 {team.filter(p => p.id !== me.id).map(p => <option key={p.id} value={p.id}>{p.full_name}</option>)}
               </optgroup>
@@ -163,6 +172,13 @@ export default function TasksPage({ params }: { params: Params }) {
         </form>
       )}
 
+      {loaded && pinned.length > 0 && (
+        <section className="group pinned-group">
+          <h2>★ Pinned <span className="count">{pinned.length}</span></h2>
+          <div className="list">{pinned.map(t => <TaskRow key={t.id} t={t} showWho={t.assignee_id !== me.id} />)}</div>
+        </section>
+      )}
+
       {loaded && toSignOff.length > 0 && (
         <section className="group signoff-group">
           <h2 className="warn">Waiting for your sign-off <span className="count">{toSignOff.length}</span></h2>
@@ -172,7 +188,7 @@ export default function TasksPage({ params }: { params: Params }) {
         </section>
       )}
 
-      {!loaded ? <div className="empty">Loading…</div> : groups.length === 0 && helping.length === 0 && waiting.length === 0 && toSignOff.length === 0 ? (
+      {!loaded ? <div className="empty">Loading…</div> : groups.length === 0 && helping.length === 0 && waiting.length === 0 && toSignOff.length === 0 && pinned.length === 0 ? (
         <div className="empty">
           {q ? 'No tasks match your search.' : show === 'done' ? 'Nothing completed yet.' : 'Nothing open here.'}
         </div>

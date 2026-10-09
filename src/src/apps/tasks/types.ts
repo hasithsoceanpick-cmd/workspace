@@ -36,6 +36,32 @@ export interface Task {
   acknowledged_at: string | null;
   /** early reminder N days before the deadline */
   remind_days: number | null;
+  /** still not finished 3 days after the deadline: the managers were told (cleared when the deadline moves) */
+  escalated_at: string | null;
+}
+
+/** My pin / follow marks on a task */
+export interface TaskFollow {
+  task_id: number;
+  user_id: string;
+  department_id: string;
+  pinned: boolean;
+  following: boolean;
+}
+
+export type ReminderRepeat = 'daily' | 'weekdays' | 'weekly' | 'monthly';
+export interface Reminder {
+  id: number;
+  department_id: string;
+  user_id: string;
+  created_by: string | null;
+  body: string;
+  remind_at: string;
+  repeat: ReminderRepeat | null;
+  task_id: number | null;
+  sent_at: string | null;
+  done_at: string | null;
+  created_at: string;
 }
 
 export interface TaskComment {

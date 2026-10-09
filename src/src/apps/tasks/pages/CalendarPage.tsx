@@ -13,7 +13,7 @@ const MAX_IN_CELL = 4;
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
 
 export default function CalendarPage({ params }: { params: Params }) {
-  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly } = useTaskApp();
+  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly, inInbox } = useTaskApp();
   const view = params.view === 'week' ? 'week' : 'month';
   const anchor = params.d || today();
   const td = today();
@@ -33,6 +33,7 @@ export default function CalendarPage({ params }: { params: Params }) {
       // own work, plus work a selected person is helping on
       if (!selected.includes(t.assignee_id) && !helpersOf(t.id).some(h => selected.includes(h))) continue;
       if (!showDone && t.status === 'done') continue;
+      if (inInbox(t)) continue;           // not opened yet: it's waiting in the New tab
       if (!m.has(t.due_date)) m.set(t.due_date, []);
       m.get(t.due_date)!.push(t);
     }
@@ -42,7 +43,7 @@ export default function CalendarPage({ params }: { params: Params }) {
         || (person(a.assignee_id)?.full_name ?? '').localeCompare(person(b.assignee_id)?.full_name ?? ''));
     }
     return m;
-  }, [tasks, selected, showDone, person, helpersOf]);
+  }, [tasks, selected, showDone, person, helpersOf, inInbox]);
 
   function togglePerson(id: string) {
     let next: string[];
@@ -93,7 +94,7 @@ export default function CalendarPage({ params }: { params: Params }) {
     return (
       <div
         key={t.id}
-        className={`chip ${done ? 'done' : ''} ${t.status === 'review' ? 'review' : ''} ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${asHelper ? 'helper' : ''}`}
+        className={`chip ${done ? 'done' : ''} ${late && t.escalated_at ? 'escalated' : ''} ${t.status === 'review' ? 'review' : ''} ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${asHelper ? 'helper' : ''}`}
         style={{ ['--c' as string]: p?.color ?? '#64748b' }}
         draggable={canDrag}
         onDragStart={e => { e.dataTransfer.setData('text/plain', `${t.id}:${asHelper ? 1 : 0}`); e.dataTransfer.effectAllowed = 'move'; }}

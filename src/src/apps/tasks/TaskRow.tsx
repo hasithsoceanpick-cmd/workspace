@@ -8,7 +8,7 @@ import MovedBadge from './DueHistory';
 import Avatar from '../../platform/Avatar';
 
 export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
-  const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf } = useTaskApp();
+  const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf, marks } = useTaskApp();
   const helping = helperOnly(t);
   const helpers = helpersOf(t.id);
   const prog = progressOf(t.id);
@@ -33,7 +33,7 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
   }
 
   return (
-    <div className={`task-row ${overdue ? 'overdue' : ''} ${done ? 'done' : ''} ${review ? 'review' : ''} ${isNew ? 'is-new' : ''}`} onClick={() => openTask(t.id)}>
+    <div className={`task-row ${overdue ? 'overdue' : ''} ${done ? 'done' : ''} ${review ? 'review' : ''} ${isNew ? 'is-new' : ''} ${t.escalated_at && !finished(t) ? 'escalated' : ''}`} onClick={() => openTask(t.id)}>
       <button className={`check ${done ? 'on' : ''} ${review ? 'half' : ''} ${helping ? 'locked' : ''}`} onClick={toggle}
         aria-label={helping ? 'Only the owner can mark this done' : done ? 'Reopen' : review ? (canCheck(t) ? 'Sign off' : 'Waiting for sign-off') : 'Mark done'}
         title={review ? (canCheck(t) ? 'Sign it off' : 'Waiting for sign-off') : undefined}>
@@ -42,7 +42,9 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
       <div className="tr-main">
         <div className="tr-title">{t.title}</div>
         <div className="tr-meta">
+          {marks(t.id).pinned && <span className="pin-star" title="Pinned">★</span>}
           {isNew && <span className="pill new" title="Someone gave you this — open it and press Got it">New</span>}
+          {t.escalated_at && !finished(t) && <span className="pill esc" title="3+ days past its deadline: the manager has been told">Escalated</span>}
           {review && <span className="pill s-review">{canCheck(t) ? 'Sign off' : 'Waiting for sign-off'}</span>}
           {unseen && <span className="pill unseen" title={`${firstName(who?.full_name ?? '')} hasn't opened it yet`}>Not opened yet</span>}
           {t.priority === 'high' && <span className="pill high">High</span>}

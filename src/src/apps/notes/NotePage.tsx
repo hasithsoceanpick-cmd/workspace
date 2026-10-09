@@ -8,7 +8,8 @@ import { uploadFile } from '../../platform/files';
 import Avatar from '../../platform/Avatar';
 import { useNotesApp } from './store';
 import { NOTE_COLS, untitled, type Note, type NoteRow } from './types';
-import NoteEditor from './Editor';
+import NoteEditor, { type TaskMaker } from './Editor';
+import { usePlatform } from '../../platform/store';
 import NoteFiles, { useNoteFiles } from './NoteFiles';
 import LinkedTasks from './LinkedTasks';
 import ShareDialog, { shareLabel } from './ShareDialog';
@@ -38,6 +39,32 @@ export default function NotePage({ row }: { row: NoteRow }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const savedDoc = useRef('');                                  // content as last loaded/saved, to skip no-op saves
   const files = useNoteFiles(id, editable);
+  const { isAdmin, deptPeople, userHasApp } = usePlatform();
+  const [linksKey, setLinksKey] = useState(0);
+
+  // "→ Task" in the editor: who a task can go to (the same rule as giving work in Tasks)
+  const taskMaker: TaskMaker | undefined = !myAppKeys.includes('tasks') || !editable ? undefined : (() => {
+    const inDept = me.department_id === row.department_id;
+    const team = deptPeople.filter(p => p.department_id === row.department_id && userHasApp(p.id, 'tasks', row.department_id) && (
+      p.id === me.id ? inDept : isAdmin || (inDept && (me.role === 'manager' || (me.role === 'senior' && p.role === 'member')))));
+    if (!team.length) return undefined;
+    const sorted = [...team].sort((a, b) => (a.id === me.id ? -1 : b.id === me.id ? 1 : a.full_name.localeCompare(b.full_name)));
+    return {
+      team: sorted.map(p => ({ id: p.id, name: p.id === me.id ? `${p.full_name} (me)` : p.full_name })),
+      defaultOwner: sorted[0].id,
+      async create(title, owner, due) {
+        const { data, error } = await supabase.from('tasks').insert({
+          title, assignee_id: owner, due_date: due, notes: `From the note “${untitled(row.title)}”`, status: 'todo', priority: 'normal',
+        }).select('id').single();
+        if (error) { fail(error); return null; }
+        const tid = (data as { id: number }).id;
+        await supabase.from('notes_task_links').insert({ note_id: id, task_id: tid });
+        setLinksKey(k => k + 1);
+        toast(owner === me.id ? 'Task created and linked' : `Task given to ${firstName(person(owner)?.full_name ?? '')} and linked`);
+        return tid;
+      },
+    };
+  })();
 
   const load = useCallback(async () => {
     const { data, error } = await supabase.from('notes_pages').select('*').eq('id', id).maybeSingle();
@@ -195,7 +222,8 @@ export default function NotePage({ row }: { row: NoteRow }) {
             queue({ content: doc });
           }}
           uploadImage={uploadImage}
-          attachFiles={fs => files.addFiles(fs)} />
+          attachFiles={fs => files.addFiles(fs)}
+          taskMaker={taskMaker} />
       ) : <div className="empty">Loading…</div>}
 
       {(kids.length > 0 || editable) && (
@@ -215,7 +243,7 @@ export default function NotePage({ row }: { row: NoteRow }) {
       )}
 
       <NoteFiles files={files} />
-      {myAppKeys.includes('tasks') && <LinkedTasks noteId={id} departmentId={row.department_id} />}
+      {myAppKeys.includes('tasks') && <LinkedTasks key={linksKey} noteId={id} departmentId={row.department_id} />}
 
       {sharing && <ShareDialog note={row} onClose={() => setSharing(false)} />}
     </article>

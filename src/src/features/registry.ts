@@ -4,6 +4,8 @@ import type { Task } from '../apps/tasks/types';
 import DailyNotes from './daily-notes/DailyNotes';
 import MonthEndPage from './month-end/MonthEndPage';
 import CompliancePage from './compliance/CompliancePage';
+import ComplianceHome from './compliance/ComplianceHome';
+import MonthEndHome from './month-end/MonthEndHome';
 
 /**
  * DEPARTMENT-SPECIFIC FEATURES
@@ -18,6 +20,7 @@ import CompliancePage from './compliance/CompliancePage';
  *   pages      – extra tabs inside an app
  *   dayReview  – a panel at the bottom of Tasks → Day review
  *   taskPanel  – a section inside the task details panel
+ *   homePanel  – a panel on the managers' Home screen
  */
 export interface FeatureModule {
   /** Must match feature_key in the department_features table */
@@ -31,6 +34,8 @@ export interface FeatureModule {
   taskPanel?: ComponentType<{ task: Task }>;
   /** notification kinds this feature sends; clicking one opens the feature's first page */
   noticeKinds?: string[];
+  /** a panel on the Home screen (managers and senior executives) */
+  homePanel?: ComponentType;
 }
 
 export const FEATURES: FeatureModule[] = [
@@ -48,6 +53,7 @@ export const FEATURES: FeatureModule[] = [
     description: 'Monthly self-declaration checklist (MEC / CMP lines with owners and due dates), reviewed by a senior executive and approved by the manager.',
     pages: [{ id: 'month-end', label: 'Month end', component: MonthEndPage }],
     noticeKinds: ['month_end'],
+    homePanel: MonthEndHome,
   },
   {
     key: 'compliance',
@@ -55,5 +61,6 @@ export const FEATURES: FeatureModule[] = [
     name: 'Compliance calendar',
     description: 'Recurring statutory deadlines (tax returns, EPF/ETF, renewals …) with owners, early reminders and an on-time record.',
     pages: [{ id: 'compliance', label: 'Compliance', component: CompliancePage }],
+    homePanel: ComplianceHome,
   },
 ];
