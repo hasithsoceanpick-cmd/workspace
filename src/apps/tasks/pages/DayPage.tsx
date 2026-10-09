@@ -9,6 +9,10 @@ import { firstName } from '../../../lib/labels';
 import type { TaskActivity as Activity } from '../types';
 import type { Profile } from '../../../platform/types';
 import Avatar from '../../../platform/Avatar';
+import { finished } from '../labels';
+
+/** The owner finishing a task (signing it off is the checker's step, not a second completion). */
+const isFinish = (a: Activity) => a.kind === 'status' && (a.new_value === 'review' || (a.new_value === 'done' && a.old_value !== 'review'));
 
 export default function DayPage({ params }: { params: Params }) {
   const { me, dept, team, tasks, profiles, person, openTask } = useTaskApp();
@@ -41,11 +45,11 @@ export default function DayPage({ params }: { params: Params }) {
   }, [acts]);
 
   const dueThatDay = tasks.filter(t => t.due_date === d && teamIds.has(t.assignee_id));
-  const completed = new Set((acts ?? []).filter(a => a.kind === 'status' && a.new_value === 'done').map(a => a.task_id));
-  const stillDone = [...completed].filter(id => taskById.get(id)?.status === 'done').length;
+  const completed = new Set((acts ?? []).filter(isFinish).map(a => a.task_id));
+  const stillDone = [...completed].filter(id => { const t = taskById.get(id); return !!t && finished(t); }).length;
   const comments = (acts ?? []).filter(a => a.kind === 'comment').length;
-  const otherUpdates = (acts ?? []).filter(a => a.kind !== 'comment' && !(a.kind === 'status' && a.new_value === 'done')).length;
-  const dueDone = dueThatDay.filter(t => t.status === 'done').length;
+  const otherUpdates = (acts ?? []).filter(a => a.kind !== 'comment' && !isFinish(a)).length;
+  const dueDone = dueThatDay.filter(finished).length;
 
   // people to show: my team first, then anyone else who touched visible tasks
   const people: Profile[] = [
@@ -89,7 +93,7 @@ export default function DayPage({ params }: { params: Params }) {
           {active.map(p => {
             const list = byActor.get(p.id) ?? [];
             const due = dueThatDay.filter(t => t.assignee_id === p.id);
-            const doneCount = list.filter(a => a.kind === 'status' && a.new_value === 'done').length;
+            const doneCount = list.filter(isFinish).length;
             return (
               <section key={p.id} className="person-card">
                 <header>
@@ -131,13 +135,13 @@ export default function DayPage({ params }: { params: Params }) {
                   <div className="due-box">
                     <div className="due-head">Due {d === td ? 'today' : 'this day'}</div>
                     {due.map(t => {
-                      const ok = t.status === 'done';
+                      const ok = finished(t);
                       const missed = !ok && d < td;
                       return (
                         <button key={t.id} className={`due-item ${ok ? 'ok' : missed ? 'missed' : ''}`} onClick={() => openTask(t.id)}>
                           <span className="due-mark">{ok ? '✓' : missed ? '✕' : '○'}</span>
                           <span className="grow">{t.title}</span>
-                          <span className="muted tiny">{ok ? 'done' : missed ? 'missed' : 'open'}</span>
+                          <span className="muted tiny">{t.status === 'review' ? 'sign-off' : ok ? 'done' : missed ? 'missed' : 'open'}</span>
                         </button>
                       );
                     })}

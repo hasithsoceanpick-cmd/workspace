@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePlatform } from './store';
 import { ago } from '../lib/dates';
-import { go } from '../lib/route';
 import type { Notice } from './types';
-import { APPS } from './registry';
-import { FEATURES } from '../features/registry';
+import { useOpenNotice } from './notices';
 
 export default function Bell() {
-  const { notices, unread, markRead, isAdmin, dept, departments, setDeptId } = usePlatform();
+  const { notices, unread, markRead, isAdmin, departments } = usePlatform();
+  const openNotice = useOpenNotice();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -19,20 +18,8 @@ export default function Bell() {
   }, [open]);
 
   function click(n: Notice) {
-    if (!n.read_at) markRead([n.id]);
     setOpen(false);
-    if (n.kind === 'signup') return go('admin', 'people');
-    // the admin may need to hop to the right department first
-    if (isAdmin && n.department_id && n.department_id !== dept?.id) setDeptId(n.department_id);
-    if (n.app_key) {
-      const app = APPS.find(a => a.key === n.app_key);
-      const ref = app?.refParam;
-      const params: Record<string, string> = ref && n.ref_id && n.kind !== 'due_today' ? { [ref]: String(n.ref_id) } : {};
-      // some alerts open a page instead of an item: the app's own pages, or a department feature's page
-      const feature = FEATURES.find(f => f.app === n.app_key && f.noticeKinds?.includes(n.kind) && f.pages?.length);
-      const page = app?.kindPages?.[n.kind] ?? (feature ? `x-${feature.pages![0].id}` : '');
-      setTimeout(() => go(n.app_key!, page, params), 0);
-    }
+    openNotice(n);
   }
 
   const deptName = (id: string | null) => departments.find(d => d.id === id)?.name;

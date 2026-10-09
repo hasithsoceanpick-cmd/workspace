@@ -7,6 +7,7 @@ import Avatar from '../../../platform/Avatar';
 import type { Task } from '../types';
 import { repeatLabel, statusLabel } from '../labels';
 import MovedBadge from '../DueHistory';
+import { finished, finishedAt } from '../labels';
 
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
 
@@ -56,7 +57,7 @@ function Board({ params }: { params: Params }) {
   const [over, setOver] = useState<string | null>(null);
 
   const keep = (t: Task) =>
-    t.status !== 'done' &&
+    !finished(t) &&
     (params.show === 'overdue' ? t.due_date < td : params.show === 'week' ? t.due_date <= addDays(td, 7) : true);
   const order = (a: Task, b: Task) =>
     Number(b.due_date < td) - Number(a.due_date < td) || a.due_date.localeCompare(b.due_date)
@@ -65,7 +66,7 @@ function Board({ params }: { params: Params }) {
   const columns = useMemo(() => team.map(p => {
     const own = tasks.filter(t => t.assignee_id === p.id && keep(t)).sort(order);
     const helping = showHelping ? tasks.filter(t => t.assignee_id !== p.id && keep(t) && helpersOf(t.id).includes(p.id)).sort(order) : [];
-    const allOpen = tasks.filter(t => t.assignee_id === p.id && t.status !== 'done');
+    const allOpen = tasks.filter(t => t.assignee_id === p.id && !finished(t));
     return {
       p, own, helping,
       open: allOpen.length,
@@ -92,7 +93,7 @@ function Board({ params }: { params: Params }) {
     const prog = progressOf(t.id);
     const canDrag = !helpingFor && !helperOnly(t);
     return (
-      <div key={`${t.id}-${helpingFor ?? ''}`} className={`bcard ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${helpingFor ? 'helping' : ''}`}
+      <div key={`${t.id}-${helpingFor ?? ''}`} className={`bcard ${late ? 'late' : ''} ${late && t.escalated_at ? 'escalated' : ''} ${t.priority === 'high' ? 'high' : ''} ${helpingFor ? 'helping' : ''}`}
         draggable={canDrag}
         onDragStart={e => { e.dataTransfer.setData('text/x-board', String(t.id)); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={() => openTask(t.id)} role="button" tabIndex={0}
@@ -103,6 +104,7 @@ function Board({ params }: { params: Params }) {
             {late ? `${daysBetween(t.due_date, td)}d late` : fmtDue(t.due_date)}
           </span>
           {(t.status === 'doing' || t.status === 'waiting') && <span className={`pill s-${t.status}`}>{statusLabel(t.status)}</span>}
+          {late && t.escalated_at && <span className="pill esc">Escalated</span>}
           {t.priority === 'high' && <span className="pill high">High</span>}
           {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`}>☑ {prog.done}/{prog.total}</span>}
           {t.repeat && <span className="pill repeat" title={`Repeats ${repeatLabel(t.repeat).toLowerCase()}`}>⟳</span>}
@@ -161,8 +163,8 @@ function TeamTable() {
 
   const rows = team.map(p => {
     const mine = tasks.filter(t => t.assignee_id === p.id);
-    const open = mine.filter(t => t.status !== 'done');
-    const doneDays = mine.filter(t => t.status === 'done' && t.completed_at).map(t => localDayOf(t.completed_at!));
+    const open = mine.filter(t => !finished(t));
+    const doneDays = mine.map(finishedAt).filter((x): x is string => !!x).map(localDayOf);
     return {
       p,
       open: open.length,

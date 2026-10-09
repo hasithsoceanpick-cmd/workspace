@@ -4,6 +4,9 @@ const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY) as string | undefined;
 
 export const isConfigured = Boolean(url && key);
+/** The project address and its public (publishable) key — both are safe to show; they're in every page. */
+export const supabaseUrl = (url || '').replace(/\/+$/, '');
+export const supabasePublicKey = key || '';
 
 export const supabase = createClient(url || 'http://localhost', key || 'missing-key', {
   auth: { persistSession: true, autoRefreshToken: true },

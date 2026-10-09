@@ -29,7 +29,7 @@ export interface AppDef {
  *   4. switch it on for a department in Admin console → Departments
  */
 export const APPS: AppDef[] = [
-  { key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true, kindPages: { weekly: 'week' } },
+  { key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true, kindPages: { weekly: 'week', reminder: 'reminders' } },
   // the editor is large, so Notes only downloads when someone opens it
   { key: 'notes', name: 'Notes', component: lazy(() => import('../apps/notes')), refParam: 'note' },
 ];

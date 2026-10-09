@@ -7,6 +7,8 @@ import { firstName } from '../../../lib/labels';
 import { downloadXlsx, xDate } from '../../../platform/excel';
 import Avatar from '../../../platform/Avatar';
 import type { Task, TaskActivity } from '../types';
+import { finished, finishedAt, isLate } from '../labels';
+import { ReportsSwitch } from './TrendsPage';
 
 /** Weekly summary for leads: what got done, what slipped, whose deadlines moved. */
 export default function WeekPage({ params }: { params: Params }) {
@@ -32,16 +34,17 @@ export default function WeekPage({ params }: { params: Params }) {
   const byId = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks]);
   const teamIds = new Set(team.map(p => p.id));
   const inWeek = (d: string) => d >= start && d <= end;
-  const doneIn = tasks.filter(t => t.status === 'done' && t.completed_at && inWeek(localDayOf(t.completed_at)) && teamIds.has(t.assignee_id));
-  const lateDone = doneIn.filter(t => localDayOf(t.completed_at!) > t.due_date);
-  const overdue = tasks.filter(t => t.status !== 'done' && t.due_date < td && teamIds.has(t.assignee_id))
+  const finDay = (t: Task) => { const x = finishedAt(t); return x ? localDayOf(x) : null; };
+  const doneIn = tasks.filter(t => { const f = finDay(t); return !!f && inWeek(f) && teamIds.has(t.assignee_id); });
+  const lateDone = doneIn.filter(t => finDay(t)! > t.due_date);
+  const overdue = tasks.filter(t => isLate(t, td) && teamIds.has(t.assignee_id))
     .sort((a, b) => a.due_date.localeCompare(b.due_date));
   const moves = (acts ?? []).filter(a => a.kind === 'due_date' && byId.has(a.task_id) && teamIds.has(byId.get(a.task_id)!.assignee_id));
   const created = (acts ?? []).filter(a => a.kind === 'created' && byId.has(a.task_id) && teamIds.has(byId.get(a.task_id)!.assignee_id));
 
   const rows = team.map(p => {
     const done = doneIn.filter(t => t.assignee_id === p.id);
-    const late = done.filter(t => localDayOf(t.completed_at!) > t.due_date).length;
+    const late = done.filter(t => finDay(t)! > t.due_date).length;
     return {
       p,
       done: done.length,
@@ -50,7 +53,7 @@ export default function WeekPage({ params }: { params: Params }) {
       moved: moves.filter(m => byId.get(m.task_id)!.assignee_id === p.id).length,
       added: created.filter(c => byId.get(c.task_id)!.assignee_id === p.id).length,
       overdue: overdue.filter(t => t.assignee_id === p.id).length,
-      open: tasks.filter(t => t.assignee_id === p.id && t.status !== 'done').length,
+      open: tasks.filter(t => t.assignee_id === p.id && !finished(t)).length,
     };
   });
   const sum = rows.reduce((s, r) => ({ done: s.done + r.done, late: s.late + r.late, moved: s.moved + r.moved, added: s.added + r.added }),
@@ -76,8 +79,8 @@ export default function WeekPage({ params }: { params: Params }) {
         },
         {
           name: 'Completed late',
-          columns: [{ header: 'Task', width: 44 }, { header: 'Owner', width: 20 }, { header: 'Deadline', width: 13 }, { header: 'Completed', width: 13 }, { header: 'Days late', width: 10 }],
-          rows: lateDone.map(t => [t.title, nameOf(t.assignee_id), xDate(t.due_date), xDate(t.completed_at), daysBetween(t.due_date, localDayOf(t.completed_at!))]),
+          columns: [{ header: 'Task', width: 44 }, { header: 'Owner', width: 20 }, { header: 'Deadline', width: 13 }, { header: 'Finished', width: 13 }, { header: 'Days late', width: 10 }],
+          rows: lateDone.map(t => [t.title, nameOf(t.assignee_id), xDate(t.due_date), xDate(finishedAt(t)), daysBetween(t.due_date, finDay(t)!)]),
         },
         {
           name: 'Overdue now',
@@ -98,6 +101,7 @@ export default function WeekPage({ params }: { params: Params }) {
           <div className="muted">{fmtDay(start)} – {fmtDay(end)}{isCurrent ? ' · this week so far' : ''}</div>
         </div>
         <div className="filters">
+          <ReportsSwitch current="week" />
           <div className="cal-nav">
             <button className="icon-btn" onClick={() => setParams({ w: addDays(start, -7) })} aria-label="Previous week">‹</button>
             <button className="icon-btn" onClick={() => setParams({ w: addDays(start, 7) })} disabled={start >= thisWeek} aria-label="Next week">›</button>
@@ -167,9 +171,9 @@ export default function WeekPage({ params }: { params: Params }) {
             <ul className="day-log">
               {lateDone.map(t => (
                 <li key={t.id}>
-                  <time>{fmtDay(localDayOf(t.completed_at!))}</time>
+                  <time>{fmtDay(finDay(t)!)}</time>
                   {taskLink(t)}
-                  <div className="detail">{firstName(nameOf(t.assignee_id))} · due {fmtDay(t.due_date)} · {daysBetween(t.due_date, localDayOf(t.completed_at!))}d late</div>
+                  <div className="detail">{firstName(nameOf(t.assignee_id))} · due {fmtDay(t.due_date)} · {daysBetween(t.due_date, finDay(t)!)}d late</div>
                 </li>
               ))}
             </ul>

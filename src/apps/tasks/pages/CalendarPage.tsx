@@ -6,13 +6,14 @@ import {
 } from '../../../lib/dates';
 import { firstName } from '../../../lib/labels';
 import type { Task } from '../types';
+import { finished } from '../labels';
 import Avatar from '../../../platform/Avatar';
 
 const MAX_IN_CELL = 4;
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
 
 export default function CalendarPage({ params }: { params: Params }) {
-  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly } = useTaskApp();
+  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly, inInbox } = useTaskApp();
   const view = params.view === 'week' ? 'week' : 'month';
   const anchor = params.d || today();
   const td = today();
@@ -32,16 +33,17 @@ export default function CalendarPage({ params }: { params: Params }) {
       // own work, plus work a selected person is helping on
       if (!selected.includes(t.assignee_id) && !helpersOf(t.id).some(h => selected.includes(h))) continue;
       if (!showDone && t.status === 'done') continue;
+      if (inInbox(t)) continue;           // not opened yet: it's waiting in the New tab
       if (!m.has(t.due_date)) m.set(t.due_date, []);
       m.get(t.due_date)!.push(t);
     }
     for (const list of m.values()) {
-      list.sort((a, b) => Number(a.status === 'done') - Number(b.status === 'done')
+      list.sort((a, b) => Number(finished(a)) - Number(finished(b))
         || prioRank[a.priority] - prioRank[b.priority]
         || (person(a.assignee_id)?.full_name ?? '').localeCompare(person(b.assignee_id)?.full_name ?? ''));
     }
     return m;
-  }, [tasks, selected, showDone, person, helpersOf]);
+  }, [tasks, selected, showDone, person, helpersOf, inInbox]);
 
   function togglePerson(id: string) {
     let next: string[];
@@ -86,18 +88,18 @@ export default function CalendarPage({ params }: { params: Params }) {
   const chip = (t: Task, rowPerson?: string) => {
     const asHelper = rowPerson ? rowPerson !== t.assignee_id : !selected.includes(t.assignee_id);
     const p = person(asHelper && rowPerson ? rowPerson : t.assignee_id);
-    const done = t.status === 'done';
+    const done = finished(t);
     const late = !done && t.due_date < td;
     const canDrag = !helperOnly(t);
     return (
       <div
         key={t.id}
-        className={`chip ${done ? 'done' : ''} ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${asHelper ? 'helper' : ''}`}
+        className={`chip ${done ? 'done' : ''} ${late && t.escalated_at ? 'escalated' : ''} ${t.status === 'review' ? 'review' : ''} ${late ? 'late' : ''} ${t.priority === 'high' ? 'high' : ''} ${asHelper ? 'helper' : ''}`}
         style={{ ['--c' as string]: p?.color ?? '#64748b' }}
         draggable={canDrag}
         onDragStart={e => { e.dataTransfer.setData('text/plain', `${t.id}:${asHelper ? 1 : 0}`); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={e => { e.stopPropagation(); openTask(t.id); }}
-        title={`${t.title} — ${person(t.assignee_id)?.full_name ?? ''}${asHelper ? ` (helping: ${p?.full_name ?? ''})` : ''}${late ? ' (overdue)' : ''}`}
+        title={`${t.title} — ${person(t.assignee_id)?.full_name ?? ''}${asHelper ? ` (helping: ${p?.full_name ?? ''})` : ''}${late ? ' (overdue)' : ''}${t.status === 'review' ? ' (waiting for sign-off)' : ''}`}
       >
         {multi && view === 'month' && <span className="chip-who">{firstName(p?.full_name ?? '')}</span>}
         <span className="chip-text">{t.title}</span>
@@ -178,7 +180,7 @@ export default function CalendarPage({ params }: { params: Params }) {
             {selected.map(pid => {
               const p = person(pid);
               const days = weekDays(anchor);
-              const open = days.reduce((n, d) => n + (byDate.get(d) ?? []).filter(t => t.assignee_id === pid && t.status !== 'done').length, 0);
+              const open = days.reduce((n, d) => n + (byDate.get(d) ?? []).filter(t => t.assignee_id === pid && !finished(t)).length, 0);
               return [
                 <div key={pid} className="week-person">
                   <Avatar p={p} size={26} />

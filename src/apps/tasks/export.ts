@@ -2,7 +2,7 @@ import { supabase } from '../../supabase';
 import { downloadXlsx, xDate, type XSheet } from '../../platform/excel';
 import { today } from '../../lib/dates';
 import type { Profile } from '../../platform/types';
-import { repeatLabel, statusLabel } from './labels';
+import { finished, isLate, remindLabel, repeatLabel, statusLabel } from './labels';
 import type { Task, TaskActivity } from './types';
 
 /**
@@ -19,27 +19,29 @@ export async function exportTasks(opts: {
   const name = (id: string | null | undefined) => person(id)?.full_name ?? '';
   const td = today();
   const sorted = [...tasks].sort((a, b) =>
-    Number(a.status === 'done') - Number(b.status === 'done') || a.due_date.localeCompare(b.due_date) || a.id - b.id);
+    Number(finished(a)) - Number(finished(b)) || a.due_date.localeCompare(b.due_date) || a.id - b.id);
 
   const taskSheet: XSheet = {
     name: 'Tasks',
     columns: [
       { header: 'Task #', width: 8 }, { header: 'Title', width: 44 }, { header: 'Owner', width: 20 },
-      { header: 'Helpers', width: 24 }, { header: 'Status', width: 12 }, { header: 'Priority', width: 10 },
+      { header: 'Helpers', width: 24 }, { header: 'Status', width: 20 }, { header: 'Priority', width: 10 },
       { header: 'Deadline', width: 13 }, { header: 'First deadline', width: 14 }, { header: 'Times moved', width: 12 },
       { header: 'Overdue days', width: 13 }, { header: 'Repeats', width: 11 }, { header: 'Checklist', width: 10 },
-      { header: 'Assigned by', width: 20 }, { header: 'Created', width: 13 }, { header: 'Completed', width: 13 },
+      { header: 'Assigned by', width: 20 }, { header: 'Created', width: 13 }, { header: 'Finished', width: 13 },
+      { header: 'Signed off by', width: 18 }, { header: 'Times sent back', width: 14 }, { header: 'Early reminder', width: 15 },
       { header: 'Notes', width: 50 },
     ],
     rows: sorted.map(t => {
       const p = progressOf(t.id);
-      const late = t.status !== 'done' && t.due_date < td
+      const late = isLate(t, td)
         ? Math.round((Date.parse(td) - Date.parse(t.due_date)) / 86400000) : null;
       return [
         t.id, t.title, name(t.assignee_id), helpersOf(t.id).map(name).join(', '), statusLabel(t.status),
         t.priority[0].toUpperCase() + t.priority.slice(1), xDate(t.due_date), xDate(t.original_due ?? t.due_date),
         t.due_moves ?? 0, late, repeatLabel(t.repeat), p ? `${p.done}/${p.total}` : '', name(t.created_by),
-        xDate(t.created_at), xDate(t.completed_at), t.notes,
+        xDate(t.created_at), xDate(t.submitted_at ?? t.completed_at), name(t.checked_by), t.sent_back_n || null,
+        remindLabel(t.remind_days), t.notes,
       ];
     }),
   };

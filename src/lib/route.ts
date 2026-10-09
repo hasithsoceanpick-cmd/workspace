@@ -22,6 +22,12 @@ export function go(app: string, page = '', params: Params = {}) {
   window.location.hash = build(app, page, params);
 }
 
+/** Go somewhere without adding a history entry (e.g. the first page an app lands on) */
+export function replaceRoute(app: string, page = '', params: Params = {}) {
+  history.replaceState(null, '', build(app, page, params));
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+}
+
 /** Change some params of the current page without adding history entries */
 export function setParams(patch: Params) {
   const { app, page, params } = parse();

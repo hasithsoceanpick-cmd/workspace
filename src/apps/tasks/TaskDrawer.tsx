@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Clipboa
 import { useTaskApp } from './store';
 import { supabase } from '../../supabase';
 import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
-import { PRIORITIES, REPEATS, STATUSES } from './labels';
+import { PRIORITIES, REMINDS, REPEATS, STATUSES, isLate } from './labels';
 import { DueMovesList } from './DueHistory';
 import { firstName } from '../../lib/labels';
 import { daysBetween, fmtDay, fmtDue, fmtStamp, today } from '../../lib/dates';
@@ -12,11 +12,12 @@ import { clipboardFiles } from '../../platform/files';
 import { TASK_PANELS } from '../../platform/slots';
 import Avatar from '../../platform/Avatar';
 import { TaskFiles, useTaskFiles } from './TaskFiles';
+import { ReminderForm } from './Reminders';
 import { Checklist, useChecklist } from './Checklist';
 
 const editable = (t: TaskDraft | Task) => ({
   title: t.title, notes: t.notes, assignee_id: t.assignee_id, priority: t.priority, due_date: t.due_date,
-  repeat: t.repeat ?? null,
+  repeat: t.repeat ?? null, remind_days: t.remind_days ?? null, needs_check: t.needs_check ?? true,
 });
 
 export default function TaskDrawer() {
@@ -24,6 +25,7 @@ export default function TaskDrawer() {
   const {
     drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper, isLead, refreshChecklist, myAppKeys, fullView,
+    canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark,
   } = store;
   const features = useFeatures('tasks').filter(f => f.taskPanel);
   const panels = TASK_PANELS.filter(p => myAppKeys.includes(p.app));
@@ -37,12 +39,13 @@ export default function TaskDrawer() {
       const d = drawer.defaults;
       return {
         title: d.title ?? '', notes: d.notes ?? '', status: d.status ?? 'todo', priority: d.priority ?? 'normal',
-        due_date: d.due_date ?? today(), repeat: d.repeat ?? null,
+        due_date: d.due_date ?? today(), repeat: d.repeat ?? null, remind_days: d.remind_days ?? null, needs_check: true,
         assignee_id: d.assignee_id && team.some(p => p.id === d.assignee_id) ? d.assignee_id : defaultAssignee,
       };
     }
     return task ? { ...editable(task), status: task.status } : {
       title: '', notes: '', status: 'todo', priority: 'normal', due_date: today(), assignee_id: defaultAssignee, repeat: null,
+      remind_days: null, needs_check: true,
     };
   });
   const [busy, setBusy] = useState(false);
@@ -53,6 +56,8 @@ export default function TaskDrawer() {
   const [reply, setReply] = useState('');
   const [showMoves, setShowMoves] = useState(false);
   const [newHelpers, setNewHelpers] = useState<string[]>([]);
+  const [backReason, setBackReason] = useState<string | null>(null);
+  const [reminding, setReminding] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const files = useTaskFiles(task?.id ?? null);
   const steps = useChecklist(task?.id ?? null, refreshChecklist);
@@ -74,6 +79,18 @@ export default function TaskDrawer() {
 
   useEffect(() => { loadThread(); }, [loadThread]);
 
+  // opened from an alert about a task that arrived after the list was loaded: fetch the list once more
+  const [checked, setChecked] = useState(false);
+  const seeded = useRef(isNew || !!task);
+  useEffect(() => {
+    if (!seeded.current && task) { seeded.current = true; setForm({ ...editable(task), status: task.status }); }
+  }, [task]);
+  const wanted = drawer?.mode === 'edit' ? drawer.id : null;
+  useEffect(() => {
+    if (wanted === null || task || checked) return;
+    refresh().finally(() => setChecked(true));
+  }, [wanted, task, checked, refresh]);
+
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') closeDrawer(); };
     window.addEventListener('keydown', onKey);
@@ -81,6 +98,9 @@ export default function TaskDrawer() {
   }, [closeDrawer]);
 
   if (!drawer) return null;
+  if (!isNew && !task && !checked) {
+    return <Frame title="Task" onClose={closeDrawer}><div className="empty">Loading…</div></Frame>;
+  }
   if (!isNew && !task) {
     return (
       <Frame title="Task" onClose={closeDrawer}>
@@ -132,11 +152,38 @@ export default function TaskDrawer() {
 
   async function setStatus(s: TaskDraft['status']) {
     if (readOnly) return;
+    if (task && task.status === 'review' && s === 'done' && !canCheck(task)) {
+      return toast(`Waiting for ${firstName(checkerOf(task)?.full_name ?? 'the checker')} to sign it off.`);
+    }
     set('status', s);
     if (task && s !== task.status) {
       const t = await updateTask(task.id, { status: s });
-      if (t) loadThread(); else set('status', task.status);
+      if (t) {
+        set('status', t.status);
+        if (t.status === 'review' && task.status !== 'review') toast(`Sent to ${firstName(checkerOf(t)?.full_name ?? 'the checker')} for sign-off`);
+        else if (t.status === 'done' && task.status === 'review') toast(task.repeat && !task.next_task_id ? 'Signed off — the next one has been created' : 'Signed off');
+        loadThread();
+      } else set('status', task.status);
     }
+  }
+
+  async function doSendBack() {
+    if (!task || !backReason?.trim()) return toast('Say what needs fixing.', 'error');
+    setBusy(true);
+    const ok = await sendBack(task.id, backReason.trim());
+    setBusy(false);
+    if (ok) {
+      setBackReason(null);
+      set('status', 'doing');
+      toast(`Sent back to ${firstName(nameOf(task.assignee_id))}`);
+      loadThread();
+    }
+  }
+
+  async function gotIt() {
+    if (!task) return;
+    await acknowledge(task.id);
+    loadThread();
   }
 
   async function sendComment() {
@@ -172,15 +219,82 @@ export default function TaskDrawer() {
   }
 
   const onTitleKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); if (isNew) save(); } };
-  const overdue = task && task.status !== 'done' && task.due_date < today();
+  const overdue = task && isLate(task, today());
+  const givenToOther = isNew ? form.assignee_id !== me.id : !!task && !!task.created_by && task.created_by !== form.assignee_id;
+  const mayChangeCheck = isNew || (!!task && canCheck(task));
+  const checker = task ? checkerOf(task) : undefined;
+  const lastTurn = history.find(a => a.kind === 'sent_back' || a.kind === 'status');
+  const sentBack = task && task.status !== 'review' && task.status !== 'done' && lastTurn?.kind === 'sent_back' ? lastTurn : null;
   const creator = person(task?.created_by);
   const nameOf = (id: string | null) => person(id)?.full_name ?? 'Someone';
   const canRemoveFile = (a: { created_by: string | null }) => a.created_by === me.id || (!!task && !readOnly);
 
   return (
-    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}>
+    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}
+      tools={task && (() => {
+        const m = marks(task.id);
+        const involved = task.assignee_id === me.id || task.created_by === me.id || helpersOf(task.id).includes(me.id);
+        return (
+          <>
+            <button type="button" className={`chip-btn ${m.pinned ? 'on' : ''}`} onClick={() => setMark(task.id, { pinned: !m.pinned })}
+              title="Pinned tasks stay at the top of your list">{m.pinned ? '★ Pinned' : '☆ Pin'}</button>
+            {!involved && (
+              <button type="button" className={`chip-btn ${m.following ? 'on' : ''}`} onClick={() => setMark(task.id, { following: !m.following })}
+                title="Get this task's alerts">{m.following ? '✓ Following' : 'Follow'}</button>
+            )}
+            <button type="button" className={`chip-btn ${reminding ? 'on' : ''}`} onClick={() => setReminding(r => !r)} title="Set a reminder about this task">⏰ Remind</button>
+          </>
+        );
+      })()}>
+      {task && reminding && (
+        <div className="drawer-remind"><ReminderForm taskId={task.id} defaultText={task.title} onSaved={() => setReminding(false)} /></div>
+      )}
+      {task?.escalated_at && task.status !== 'done' && task.status !== 'review' && (
+        <div className="esc-banner">Escalated to the manager {fmtStamp(task.escalated_at)} — {daysBetween(task.due_date, today())} days past its deadline.</div>
+      )}
       {readOnly && (
         <div className="helper-banner">You're helping on this task. You can tick steps, add files and comment. {firstName(nameOf(task!.assignee_id))} marks it done.</div>
+      )}
+      {task && !task.acknowledged_at && task.assignee_id === me.id && (
+        <div className="ack-banner">
+          <span><strong>{firstName(nameOf(task.created_by))}</strong> gave you this task. Let them know you've seen it.</span>
+          <button className="btn primary sm" onClick={gotIt}>Got it</button>
+        </div>
+      )}
+      {task?.status === 'review' && (
+        <div className="review-banner">
+          {canCheck(task) ? (
+            backReason === null ? (
+              <>
+                <span><strong>{firstName(nameOf(task.assignee_id))}</strong> finished this{task.submitted_at ? ` ${fmtStamp(task.submitted_at)}` : ''}. Check it and sign it off.</span>
+                <div className="row gap">
+                  <button className="btn primary sm" onClick={() => setStatus('done')}>Sign off</button>
+                  <button className="btn sm" onClick={() => setBackReason('')}>Send back…</button>
+                </div>
+              </>
+            ) : (
+              <div className="send-back">
+                <textarea autoFocus rows={2} placeholder={`What does ${firstName(nameOf(task.assignee_id))} need to fix?`}
+                  value={backReason} onChange={e => setBackReason(e.target.value)} />
+                <div className="row gap">
+                  <button className="btn danger sm" disabled={busy || !backReason.trim()} onClick={doSendBack}>Send back</button>
+                  <button className="btn sm" onClick={() => setBackReason(null)}>Cancel</button>
+                </div>
+              </div>
+            )
+          ) : (
+            <>
+              <span>Finished — waiting for <strong>{firstName(checker?.full_name ?? 'the checker')}</strong> to sign it off.</span>
+              {task.assignee_id === me.id && <button className="btn sm" onClick={() => setStatus('doing')}>Take it back</button>}
+            </>
+          )}
+        </div>
+      )}
+      {sentBack && (
+        <div className="sentback-banner">
+          <strong>{firstName(nameOf(sentBack.actor_id))} sent this back</strong>{sentBack.new_value ? <>: “{sentBack.new_value}”</> : null}
+          <span className="muted small"> · {fmtStamp(sentBack.created_at)}</span>
+        </div>
       )}
       <textarea
         ref={titleRef}
@@ -195,11 +309,15 @@ export default function TaskDrawer() {
       />
 
       <div className="seg" role="radiogroup" aria-label="Status">
-        {STATUSES.map(s => (
-          <button key={s.value} type="button" disabled={readOnly && form.status !== s.value}
-            className={`seg-btn s-${s.value} ${form.status === s.value ? 'on' : ''}`}
-            onClick={() => setStatus(s.value)}>{s.label}</button>
-        ))}
+        {STATUSES.map(s => {
+          const half = s.value === 'done' && form.status === 'review';
+          return (
+            <button key={s.value} type="button" disabled={readOnly && form.status !== s.value && !half}
+              className={`seg-btn s-${s.value} ${form.status === s.value ? 'on' : ''} ${half ? 'half' : ''}`}
+              title={half ? 'Finished — waiting for sign-off' : s.value === 'done' && givenToOther && form.needs_check ? 'Sends it for sign-off' : undefined}
+              onClick={() => setStatus(s.value)}>{half ? 'Sign-off' : s.label}</button>
+          );
+        })}
       </div>
 
       <div className="fields">
@@ -231,7 +349,7 @@ export default function TaskDrawer() {
         </label>
       </div>
 
-      <div className="fields two">
+      <div className="fields">
         <label className="field">
           <span>Repeat</span>
           <select value={form.repeat ?? ''} onChange={e => set('repeat', (e.target.value || null) as TaskDraft['repeat'])} disabled={readOnly}>
@@ -239,8 +357,25 @@ export default function TaskDrawer() {
             {REPEATS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </label>
-        {form.repeat && <div className="field-note">When this is marked done, the next one is created automatically, with the same owner, helpers and checklist.</div>}
+        <label className="field">
+          <span>Early reminder</span>
+          <select value={form.remind_days ?? ''} onChange={e => set('remind_days', e.target.value ? Number(e.target.value) : null)} disabled={readOnly}>
+            <option value="">None</option>
+            {REMINDS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        </label>
+        {givenToOther && (
+          <label className="field">
+            <span>Sign-off</span>
+            <select value={form.needs_check ? 'yes' : 'no'} onChange={e => set('needs_check', e.target.value === 'yes')}
+              disabled={readOnly || !mayChangeCheck}>
+              <option value="yes">{isNew || task?.created_by === me.id ? 'I check it when done' : `${firstName(nameOf(task?.created_by ?? null))} checks it`}</option>
+              <option value="no">Not needed</option>
+            </select>
+          </label>
+        )}
       </div>
+      {form.repeat && <div className="field-note">When this is {givenToOther && form.needs_check ? 'signed off' : 'marked done'}, the next one is created automatically, with the same owner, helpers and checklist.</div>}
 
       {task && task.due_moves > 0 && (
         <div className="due-history">
@@ -300,7 +435,15 @@ export default function TaskDrawer() {
           )}
           <div className="meta">
             Assigned by {creator ? creator.full_name : 'unknown'} · created {fmtStamp(task!.created_at)}
+            {task!.created_by !== task!.assignee_id && (
+              task!.acknowledged_at
+                ? <> · opened by {firstName(nameOf(task!.assignee_id))} {fmtStamp(task!.acknowledged_at)}</>
+                : <> · <span className="warn-text">not opened yet by {firstName(nameOf(task!.assignee_id))}</span></>
+            )}
+            {task!.status === 'review' && task!.submitted_at && <> · finished {fmtStamp(task!.submitted_at)}</>}
             {task!.completed_at && <> · completed {fmtStamp(task!.completed_at)}</>}
+            {task!.status === 'done' && task!.checked_by && <> · signed off by {firstName(nameOf(task!.checked_by))}</>}
+            {task!.sent_back_n > 0 && <> · sent back {task!.sent_back_n}×</>}
           </div>
 
           {panels.map(p => {
@@ -371,8 +514,8 @@ export default function TaskDrawer() {
   );
 }
 
-function Frame({ title, onClose, children, onPaste }: {
-  title: string; onClose: () => void; children: ReactNode; onPaste?: (e: ClipboardEvent) => void;
+function Frame({ title, onClose, children, onPaste, tools }: {
+  title: string; onClose: () => void; children: ReactNode; onPaste?: (e: ClipboardEvent) => void; tools?: ReactNode;
 }) {
   return (
     <>
@@ -380,6 +523,7 @@ function Frame({ title, onClose, children, onPaste }: {
       <aside className="drawer" role="dialog" aria-label={title} onPaste={onPaste}>
         <div className="drawer-head">
           <span className="muted">{title}</span>
+          <span className="drawer-tools">{tools}</span>
           <button className="icon-btn" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="drawer-body">{children}</div>

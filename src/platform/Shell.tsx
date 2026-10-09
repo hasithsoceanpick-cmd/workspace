@@ -1,11 +1,17 @@
 import { Suspense, useEffect } from 'react';
 import { usePlatform } from './store';
+import { supabase } from '../supabase';
+import { useOpenNotice } from './notices';
+import { refreshPush } from './push';
+import type { Notice } from './types';
 import { go, useRoute } from '../lib/route';
 import { PLATFORM_NAME } from './config';
 import { ADMIN_APP, APPS, type AppDef } from './registry';
 import Dropdown from './Dropdown';
 import Bell from './Bell';
 import UserMenu from './UserMenu';
+import Search from './Search';
+import { TOP_BAR } from './slots';
 
 export default function Shell() {
   const { isAdmin, dept, departments, setDeptId, myAppKeys, apps, profiles, toasts } = usePlatform();
@@ -18,8 +24,30 @@ export default function Shell() {
 
   // keep the URL pointing at a real app
   useEffect(() => {
+    if (route.app === 'go') return;
     if (!wantsAdmin && current && route.app !== current.key) go(current.key, '');
   }, [wantsAdmin, current, route.app]);
+
+  // a tapped phone alert arrives as #/go?notice=<id>: open what it's about
+  const openNotice = useOpenNotice();
+  const noticeId = route.app === 'go' ? Number(route.params.notice) || 0 : 0;
+  useEffect(() => {
+    if (route.app !== 'go') return;
+    let stop = false;
+    (async () => {
+      const { data } = noticeId
+        ? await supabase.from('notifications').select('*').eq('id', noticeId).maybeSingle()
+        : { data: null };
+      if (stop) return;
+      if (data) openNotice(data as Notice);
+      else go(available[0]?.key ?? (isAdmin ? 'admin' : ''));
+    })();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.app, noticeId]);
+
+  // keep this device's phone alerts working (new keys, renewed subscriptions)
+  useEffect(() => { refreshPush(); }, []);
 
   const appItems = [
     ...available.map(a => ({
@@ -69,6 +97,8 @@ export default function Shell() {
         )}
 
         <div className="topbar-right">
+          {dept && !wantsAdmin && <Search />}
+          {dept && !wantsAdmin && TOP_BAR.filter(t => myAppKeys.includes(t.app)).map(t => <t.component key={t.app} />)}
           <Bell />
           <UserMenu />
         </div>

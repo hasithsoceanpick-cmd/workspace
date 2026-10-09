@@ -48,7 +48,16 @@ const NoteImage = Image.extend({
   },
 });
 
-const allowedHref = (url: string) => /^(https?:\/\/|mailto:)/i.test(url);
+// web links, email, and links inside Workspace (e.g. #/tasks/list?task=12 from "→ Task")
+const allowedHref = (url: string) => /^(https?:\/\/|mailto:|#\/)/i.test(url);
+const internal = (url: string) => /^#\//.test(url);
+
+/** Turning a line into a task: who it can go to, and how to create it (supplied by the page). */
+export interface TaskMaker {
+  team: { id: string; name: string }[];
+  defaultOwner: string;
+  create: (title: string, owner: string, due: string) => Promise<number | null>;
+}
 
 export interface EditorProps {
   content: JSONContent | null;
@@ -58,9 +67,11 @@ export interface EditorProps {
   uploadImage: (f: File) => Promise<string | null>;
   /** other files pasted or dropped: attach them to the page */
   attachFiles: (f: File[]) => void;
+  /** when set, the toolbar offers "→ Task" */
+  taskMaker?: TaskMaker;
 }
 
-export default function NoteEditor({ content, editable, onChange, uploadImage, attachFiles }: EditorProps) {
+export default function NoteEditor({ content, editable, onChange, uploadImage, attachFiles, taskMaker }: EditorProps) {
   const cb = useRef({ onChange, uploadImage, attachFiles });
   cb.current = { onChange, uploadImage, attachFiles };
   const ed = useRef<TEditor | null>(null);   // the handlers below are created once, so they read the editor from here
@@ -91,6 +102,11 @@ export default function NoteEditor({ content, editable, onChange, uploadImage, a
       handleClick(view, _pos, event) {
         const a = (event.target as HTMLElement).closest('a');
         if (!a) return false;
+        const href = a.getAttribute('href') ?? '';
+        if (internal(href) && (!view.editable || event.ctrlKey || event.metaKey)) {
+          window.location.hash = href;          // a task made from this page: open it here
+          return true;
+        }
         if (!view.editable || event.ctrlKey || event.metaKey) {
           if (allowedHref(a.href)) window.open(a.href, '_blank', 'noopener');
           return true;
@@ -138,13 +154,13 @@ export default function NoteEditor({ content, editable, onChange, uploadImage, a
   if (!editor) return null;
   return (
     <div className={`note-editor ${editable ? 'editable' : 'readonly'}`}>
-      {editable && <Toolbar editor={editor} onImage={files => addFiles(files, null)} />}
+      {editable && <Toolbar editor={editor} onImage={files => addFiles(files, null)} taskMaker={taskMaker} />}
       <EditorContent editor={editor} />
     </div>
   );
 }
 
-function Toolbar({ editor, onImage }: { editor: TEditor; onImage: (f: File[]) => void }) {
+function Toolbar({ editor, onImage, taskMaker }: { editor: TEditor; onImage: (f: File[]) => void; taskMaker?: TaskMaker }) {
   const s = useEditorState({
     editor,
     selector: ({ editor: e }) => ({
@@ -163,9 +179,37 @@ function Toolbar({ editor, onImage }: { editor: TEditor; onImage: (f: File[]) =>
       table: e.isActive('table'),
       undo: e.can().undo(),
       redo: e.can().redo(),
+      lineText: e.state.selection.$from.parent.textContent,
     }),
   });
   const [linkOpen, setLinkOpen] = useState(false);
+  const [taskForm, setTaskForm] = useState<{ title: string; owner: string; due: string; at: number } | null>(null);
+  const [making, setMaking] = useState(false);
+
+  // "→ Task": the selected words (or the whole line) become a task, and the line links to it
+  function openTask() {
+    if (!taskMaker) return;
+    const { from, to, $from } = editor.state.selection;
+    const picked = from !== to ? editor.state.doc.textBetween(from, to, ' ') : $from.parent.textContent;
+    const d = new Date();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    setTaskForm({ title: picked.trim().slice(0, 200), owner: taskMaker.defaultOwner, due: iso, at: $from.end() });
+    setLinkOpen(false);
+  }
+  async function makeTask(e: FormEvent) {
+    e.preventDefault();
+    if (!taskMaker || !taskForm || !taskForm.title.trim()) return;
+    setMaking(true);
+    const id = await taskMaker.create(taskForm.title.trim(), taskForm.owner, taskForm.due);
+    setMaking(false);
+    if (!id) return;
+    const at = Math.min(taskForm.at, editor.state.doc.content.size);
+    editor.chain().focus().insertContentAt(at, [
+      { type: 'text', text: ' ' },
+      { type: 'text', text: `→ Task #${id}`, marks: [{ type: 'link', attrs: { href: `#/tasks/list?task=${id}`, target: null } }] },
+    ]).run();
+    setTaskForm(null);
+  }
   const [url, setUrl] = useState('');
   const imgInput = useRef<HTMLInputElement>(null);
   const c = () => editor.chain().focus();
@@ -210,6 +254,9 @@ function Toolbar({ editor, onImage }: { editor: TEditor; onImage: (f: File[]) =>
         <B on={s.table} label="Table" title="Insert a table" run={() => c().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} disabled={s.table} />
         <B label="Image" title="Add an image" run={() => imgInput.current?.click()} />
         <B label="―" title="Divider line" run={() => c().setHorizontalRule().run()} />
+        {taskMaker && (
+          <B on={!!taskForm} label="→ Task" title="Turn this line into a task" run={openTask} disabled={!s.lineText.trim() && editor.state.selection.empty} />
+        )}
         <span className="tb-sep" />
         <B label="↶" title="Undo (Ctrl+Z)" run={() => c().undo().run()} disabled={!s.undo} />
         <B label="↷" title="Redo (Ctrl+Y)" run={() => c().redo().run()} disabled={!s.redo} />
@@ -225,6 +272,20 @@ function Toolbar({ editor, onImage }: { editor: TEditor; onImage: (f: File[]) =>
           <B label="− Column" title="Delete this column" run={() => c().deleteColumn().run()} />
           <B label="Delete table" title="Delete the whole table" run={() => c().deleteTable().run()} />
         </div>
+      )}
+      {taskForm && taskMaker && (
+        <form className="link-form note-task-form" onSubmit={makeTask}>
+          <input autoFocus type="text" value={taskForm.title} onChange={e => setTaskForm({ ...taskForm, title: e.target.value })}
+            aria-label="Task title" placeholder="Task title" onKeyDown={e => { if (e.key === 'Escape') setTaskForm(null); }} />
+          {taskMaker.team.length > 1 && (
+            <select value={taskForm.owner} onChange={e => setTaskForm({ ...taskForm, owner: e.target.value })} aria-label="Owner">
+              {taskMaker.team.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
+          <input type="date" value={taskForm.due} onChange={e => setTaskForm({ ...taskForm, due: e.target.value })} aria-label="Deadline" />
+          <button className="btn primary sm" disabled={making || !taskForm.title.trim()}>{making ? 'Creating…' : 'Create task'}</button>
+          <button type="button" className="btn sm" onClick={() => setTaskForm(null)}>Cancel</button>
+        </form>
       )}
       {linkOpen && (
         <form className="link-form note-link" onSubmit={applyLink}>

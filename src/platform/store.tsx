@@ -96,8 +96,14 @@ export function PlatformProvider({ me: initialMe, isAdmin, children }: { me: Pro
     refreshNotices();
     const tick = () => { if (document.visibilityState === 'visible') { reload(); refreshNotices(); } };
     const timer = setInterval(tick, 60_000);
+    const pushed = () => refreshNotices();   // a phone alert just arrived while the app is open
     window.addEventListener('focus', tick);
-    return () => { clearInterval(timer); window.removeEventListener('focus', tick); };
+    window.addEventListener('workspace:pushed', pushed);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', tick);
+      window.removeEventListener('workspace:pushed', pushed);
+    };
   }, [reload, refreshNotices]);
 
   const me = profiles.find(p => p.id === initialMe.id) ?? initialMe;
@@ -153,6 +159,9 @@ export function PlatformProvider({ me: initialMe, isAdmin, children }: { me: Pro
   const unread = notices.filter(n => !n.read_at).length;
   useEffect(() => {
     document.title = unread ? `(${unread}) ${PLATFORM_NAME}` : PLATFORM_NAME;
+    // the number on the installed app's icon
+    const nav = navigator as Navigator & { setAppBadge?: (n?: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
+    (unread ? nav.setAppBadge?.(unread) : nav.clearAppBadge?.())?.catch(() => { /* not supported */ });
   }, [unread]);
 
   if (!loaded) return <div className="splash">Loading…</div>;

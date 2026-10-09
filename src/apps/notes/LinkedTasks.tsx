@@ -80,14 +80,14 @@ export default function LinkedTasks({ noteId, departmentId }: { noteId: number; 
       {linked.length === 0 ? (!picking && <div className="muted small">No tasks linked yet.</div>) : (
         <ul className="linked-list">
           {linked.map(t => {
-            const late = t.status !== 'done' && t.due_date < td;
+            const late = t.status !== 'done' && t.status !== 'review' && t.due_date < td;
             return (
               <li key={t.id} className={t.status === 'done' ? 'done' : ''}>
                 <button className="linked-open" onClick={() => go('tasks', 'list', { task: String(t.id) })}>
                   <span className={`st-dot s-${t.status}`} />
                   <span className="grow">{t.title}</span>
                   <Avatar p={person(t.assignee_id)} size={18} />
-                  <span className={`tiny ${late ? 'danger' : 'muted'}`}>{t.status === 'done' ? 'Done' : fmtDue(t.due_date)}</span>
+                  <span className={`tiny ${late ? 'danger' : 'muted'}`}>{t.status === 'done' ? 'Done' : t.status === 'review' ? 'Waiting for sign-off' : fmtDue(t.due_date)}</span>
                 </button>
                 <button className="icon-btn" onClick={() => unlink(t)} aria-label={`Unlink ${t.title}`}>✕</button>
               </li>

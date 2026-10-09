@@ -8,6 +8,9 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
     case 'created':
       return { verb: 'created' };
     case 'status':
+      if (a.new_value === 'review') return { verb: 'finished it — sent for sign-off', tone: 'good' };
+      if (a.old_value === 'review' && a.new_value === 'done') return { verb: 'signed it off', tone: 'good' };
+      if (a.old_value === 'review') return { verb: 'took it back from sign-off' };
       if (a.new_value === 'done') return { verb: 'completed', tone: 'good' };
       if (a.old_value === 'done') return { verb: 'reopened' };
       if (a.new_value === 'doing') return { verb: 'started' };
@@ -31,6 +34,10 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
       return { verb: 'removed helper', detail: nameOf(a.old_value) };
     case 'repeated':
       return { verb: 'set up the next one', detail: `repeats ${repeatLabel(a.new_value).toLowerCase()} · after #${a.old_value}` };
+    case 'sent_back':
+      return { verb: 'sent it back', detail: a.new_value ?? undefined, tone: 'warn' };
+    case 'acknowledged':
+      return { verb: 'opened it (Got it)' };
     case 'step':
       return a.old_value === 'done'
         ? { verb: 'ticked a step', detail: a.new_value ?? undefined, tone: 'good' }
