@@ -1,4 +1,45 @@
 -- =====================================================================
+--  WORKSPACE — update 5: quick reminders, pin & follow, escalation (plus everything from updates 3 and 4: sign-off, Got it, phone alerts, compliance, trends, search)
+--  For a database set up BEFORE this update (after update 2 or later).
+--  Run once in the SQL Editor. Safe to run again. Keeps all your data.
+--  It contains everything from the earlier updates too, so only the newest
+--  update ever needs to be run.
+--  (Built by tools/compose_update.py from the ensure_profile part of
+--   01_platform.sql + 02_app_tasks.sql + the notes_search part of
+--   05_app_notes.sql + 06_feature_month_end.sql + 07_push.sql
+--   + 08_feature_compliance.sql.)
+--  Nothing here touches tables or rules that other apps created.
+-- =====================================================================
+
+-- ---------- Logins made before Workspace get a profile on first sign-in ----------
+-- >>> ensure_profile
+create or replace function public.ensure_profile() returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  u  auth.users;
+  nm text;
+  n  int;
+  palette text[] := array['#2563eb','#db2777','#059669','#d97706','#7c3aed',
+                          '#0891b2','#dc2626','#65a30d','#c026d3','#ea580c'];
+begin
+  if auth.uid() is null or exists (select 1 from public.profiles where id = auth.uid()) then
+    return;
+  end if;
+  select * into u from auth.users where id = auth.uid();
+  if not found then return; end if;
+  nm := coalesce(nullif(trim(u.raw_user_meta_data ->> 'full_name'), ''), split_part(u.email, '@', 1));
+  select count(*) into n from public.profiles;
+  insert into public.profiles (id, full_name, email, active, color)
+  values (u.id, nm, coalesce(u.email, ''), false, palette[(n % array_length(palette, 1)) + 1])
+  on conflict (id) do nothing;
+  perform public.notify(public.admin_ids(), null, null, null, 'signup',
+    format('%s (%s) signed in and is waiting for approval', nm, u.email), null);
+end $$;
+revoke execute on function public.ensure_profile() from public, anon;
+grant  execute on function public.ensure_profile() to authenticated;
+-- <<< ensure_profile
+
+-- =====================================================================
 --  WORKSPACE — Tasks app (step 2 of 8)
 --  Run after 01_platform.sql. Safe to run again.
 --
@@ -1360,3 +1401,941 @@ revoke execute on function public.task_follows_before()          from public, an
 revoke execute on function public.task_reminders_before()        from public, anon, authenticated;
 revoke execute on function public.task_reminders_due()           from public, anon;
 grant  execute on function public.task_reminders_due()           to authenticated;
+
+
+-- ---------- Notes: search ----------
+-- >>> notes_search
+-- ---------- Search (Ctrl+K): titles and page text, only pages the person can open ----
+create or replace function public.notes_search(p_q text, p_dept uuid)
+returns table (id bigint, title text, parent_id bigint, found_in text, snippet text)
+language sql stable set search_path = public as $$
+  with q as (
+    select '%' || replace(replace(replace(trim(coalesce(p_q, '')), '\', '\\'), '%', '\%'), '_', '\_') || '%' as pat
+  )
+  select p.id, p.title, p.parent_id,
+         case when p.title ilike q.pat then 'title' else 'text' end,
+         case when p.title ilike q.pat then '' else b.body end
+  from public.notes_pages p
+  cross join q
+  cross join lateral (select coalesce(string_agg(x #>> '{}', ' '), '') as body
+                        from jsonb_path_query(p.content, 'strict $.**.text') x) b
+  where p.department_id = p_dept and length(trim(coalesce(p_q, ''))) >= 2
+    and (p.title ilike q.pat or b.body ilike q.pat)
+  order by (p.title ilike q.pat) desc, p.updated_at desc
+  limit 30
+$$;
+revoke execute on function public.notes_search(text, uuid) from public, anon;
+grant  execute on function public.notes_search(text, uuid) to authenticated;
+-- <<< notes_search
+
+-- =====================================================================
+--  WORKSPACE — "Month-end declaration" department feature (step 6 of 8)
+--  Run after 02_app_tasks.sql. Safe to run again.
+--
+--  A monthly self-declaration checklist. A master list of lines (MEC =
+--  month-end confirmation, CMP = compliance, or any category) is copied
+--  into each month. Each line's owner ticks it and adds remarks by its due
+--  date (default: the 15th of the following month). When every line is
+--  ticked, a senior executive reviews and the manager approves; the month
+--  is then locked.
+--
+--  OFF for every department until the admin ticks it in
+--  Admin console → Departments & apps. Departments without it can't see
+--  it in the app and can't read or write it through the database.
+-- =====================================================================
+
+-- ---------- Tables -----------------------------------------------------
+create table if not exists public.month_end_items (           -- the master list
+  id             bigint generated always as identity primary key,
+  department_id  uuid not null references public.departments(id) on delete cascade,
+  code           text not null default '',
+  category       text not null default 'MEC',
+  title          text not null check (length(trim(title)) > 0),
+  owner_id       uuid references public.profiles(id) on delete set null,
+  due_day        int not null default 15 check (due_day between 1 and 31),  -- day of the following month
+  position       double precision not null default 0,
+  active         boolean not null default true,
+  created_by     uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at     timestamptz not null default now()
+);
+
+create table if not exists public.month_end_periods (         -- one per department per month
+  id             bigint generated always as identity primary key,
+  department_id  uuid not null references public.departments(id) on delete cascade,
+  period         date not null check (extract(day from period) = 1),   -- the month being closed
+  status         text not null default 'open' check (status in ('open', 'reviewed', 'approved')),
+  reviewed_by    uuid references public.profiles(id) on delete set null,
+  reviewed_at    timestamptz,
+  approved_by    uuid references public.profiles(id) on delete set null,
+  approved_at    timestamptz,
+  created_by     uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at     timestamptz not null default now(),
+  unique (department_id, period)
+);
+
+create table if not exists public.month_end_entries (         -- that month's copy of each line
+  id                bigint generated always as identity primary key,
+  period_id         bigint not null references public.month_end_periods(id) on delete cascade,
+  department_id     uuid not null references public.departments(id) on delete cascade,
+  item_id           bigint references public.month_end_items(id) on delete set null,
+  code              text not null default '',
+  category          text not null default 'MEC',
+  title             text not null check (length(trim(title)) > 0),
+  owner_id          uuid references public.profiles(id) on delete set null,
+  due_date          date not null,
+  position          double precision not null default 0,
+  done              boolean not null default false,
+  done_by           uuid references public.profiles(id) on delete set null,
+  done_at           timestamptz,
+  remarks           text not null default '',
+  reminded_on       date,      -- internal: due-today reminder sent
+  overdue_notified  boolean not null default false,
+  updated_at        timestamptz not null default now()
+);
+
+create index if not exists month_end_items_dept_idx     on public.month_end_items (department_id, position);
+create index if not exists month_end_periods_dept_idx   on public.month_end_periods (department_id, period);
+create index if not exists month_end_entries_period_idx on public.month_end_entries (period_id, position);
+create index if not exists month_end_entries_owner_idx  on public.month_end_entries (owner_id);
+
+-- ---------- Who can do what ----------------------------------------------
+-- see: admin, or the department's people when the feature is on
+create or replace function public.month_end_on(p_dept uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_admin() or (p_dept = public.my_dept() and public.has_feature(p_dept, 'month_end'));
+$$;
+
+-- manage the list, start a month, edit lines: admin, or the department's seniors and managers
+create or replace function public.month_end_lead(p_dept uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_admin()
+      or (p_dept = public.my_dept() and public.has_feature(p_dept, 'month_end')
+          and public.my_role() in ('manager', 'senior'));
+$$;
+
+-- ---------- Rules before saving ----------------------------------------
+create or replace function public.month_end_items_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if pg_trigger_depth() > 1 then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    new.department_id := case when public.is_admin() and new.department_id is not null
+                              then new.department_id else public.dept_of(auth.uid()) end;
+    new.created_by := coalesce(auth.uid(), new.created_by);
+    new.created_at := now();
+  else
+    new.department_id := old.department_id;
+    new.created_by := old.created_by;
+    new.created_at := old.created_at;
+  end if;
+  if new.owner_id is not null and public.dept_of(new.owner_id) is distinct from new.department_id then
+    raise exception 'The owner must be someone in this department.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists month_end_items_before on public.month_end_items;
+create trigger month_end_items_before before insert or update on public.month_end_items
+  for each row execute function public.month_end_items_before();
+
+create or replace function public.month_end_periods_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  in_dept boolean;
+  lead    boolean;
+  mgr     boolean;
+begin
+  if pg_trigger_depth() > 1 then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    new.status := 'open';
+    new.reviewed_by := null; new.reviewed_at := null;
+    new.approved_by := null; new.approved_at := null;
+    new.created_at := now();
+    return new;
+  end if;
+
+  new.department_id := old.department_id;
+  new.period := old.period;
+  new.created_by := old.created_by;
+  new.created_at := old.created_at;
+  in_dept := old.department_id = public.my_dept();
+  lead := in_dept and public.my_role() in ('manager', 'senior');
+  mgr  := in_dept and public.my_role() = 'manager';
+
+  if new.status is not distinct from old.status then
+    new.reviewed_by := old.reviewed_by; new.reviewed_at := old.reviewed_at;
+    new.approved_by := old.approved_by; new.approved_at := old.approved_at;
+  elsif old.status = 'open' and new.status = 'reviewed' then
+    if not lead then
+      raise exception 'Only a senior executive or the manager can review the declaration.';
+    end if;
+    if exists (select 1 from public.month_end_entries where period_id = old.id and not done) then
+      raise exception 'Some lines are not ticked yet.';
+    end if;
+    new.reviewed_by := auth.uid(); new.reviewed_at := now();
+    new.approved_by := null; new.approved_at := null;
+  elsif old.status = 'reviewed' and new.status = 'approved' then
+    if not mgr then
+      raise exception 'Only the manager can approve the declaration.';
+    end if;
+    new.reviewed_by := old.reviewed_by; new.reviewed_at := old.reviewed_at;
+    new.approved_by := auth.uid(); new.approved_at := now();
+  elsif new.status = 'open' and ((old.status = 'reviewed' and lead) or (old.status = 'approved' and mgr)) then
+    new.reviewed_by := null; new.reviewed_at := null;     -- sent back / reopened
+    new.approved_by := null; new.approved_at := null;
+  else
+    raise exception 'You can''t make that change to the declaration.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists month_end_periods_before on public.month_end_periods;
+create trigger month_end_periods_before before insert or update on public.month_end_periods
+  for each row execute function public.month_end_periods_before();
+
+create or replace function public.month_end_entries_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare st text; d uuid;
+begin
+  if current_setting('app.system', true) = 'on' or pg_trigger_depth() > 1 then
+    return new;   -- the daily reminder bookkeeping
+  end if;
+  if tg_op = 'INSERT' then
+    select department_id, status into d, st from public.month_end_periods where id = new.period_id;
+    if st is distinct from 'open' then
+      raise exception 'This month is signed off. Reopen it to make changes.';
+    end if;
+    new.department_id := d;
+    new.done := false; new.done_by := null; new.done_at := null;
+    new.reminded_on := null; new.overdue_notified := false;
+  else
+    select status into st from public.month_end_periods where id = old.period_id;
+    if st is distinct from 'open' then
+      raise exception 'This month is signed off. Reopen it to make changes.';
+    end if;
+    new.period_id := old.period_id;
+    new.department_id := old.department_id;
+    new.item_id := old.item_id;
+    new.reminded_on := old.reminded_on;
+    new.overdue_notified := old.overdue_notified;
+    if not public.month_end_lead(old.department_id) then    -- owners: only their tick and remarks
+      new.code := old.code; new.category := old.category; new.title := old.title;
+      new.owner_id := old.owner_id; new.due_date := old.due_date; new.position := old.position;
+    end if;
+    if new.done is distinct from old.done then
+      if old.owner_id is distinct from auth.uid() then          -- a self-declaration
+        raise exception 'Only % can tick this line.', coalesce(public.name_of(old.owner_id), 'its owner');
+      end if;
+      new.done_by := case when new.done then auth.uid() end;
+      new.done_at := case when new.done then now() end;
+    else
+      new.done_by := old.done_by;
+      new.done_at := old.done_at;
+    end if;
+    if new.due_date is distinct from old.due_date then new.overdue_notified := false; end if;
+  end if;
+  if new.owner_id is not null and public.dept_of(new.owner_id) is distinct from new.department_id then
+    raise exception 'The owner must be someone in this department.';
+  end if;
+  new.updated_at := now();
+  return new;
+end $$;
+
+drop trigger if exists month_end_entries_before on public.month_end_entries;
+create trigger month_end_entries_before before insert or update on public.month_end_entries
+  for each row execute function public.month_end_entries_before();
+
+-- ---------- Alerts -------------------------------------------------------
+create or replace function public.month_end_label(p date) returns text
+language sql stable as $$ select trim(to_char(p, 'FMMonth YYYY')) $$;
+
+-- every line ticked → the department's seniors and managers can review
+create or replace function public.month_end_entries_after() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare p public.month_end_periods;
+begin
+  if current_setting('app.system', true) = 'on' then
+    return null;
+  end if;
+  if new.done and not old.done
+     and not exists (select 1 from public.month_end_entries where period_id = new.period_id and not done) then
+    select * into p from public.month_end_periods where id = new.period_id;
+    perform public.notify(
+      array(select id from public.profiles
+            where department_id = new.department_id and active and role in ('manager', 'senior')),
+      new.department_id, 'tasks', null, 'month_end',
+      format('%s month-end declaration: every line is ticked, ready for review', public.month_end_label(p.period)),
+      auth.uid());
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists month_end_entries_after on public.month_end_entries;
+create trigger month_end_entries_after after update on public.month_end_entries
+  for each row execute function public.month_end_entries_after();
+
+create or replace function public.month_end_periods_after() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare who text := public.name_of(auth.uid()); m text := public.month_end_label(new.period);
+begin
+  if new.status is not distinct from old.status then
+    return null;
+  end if;
+  if new.status = 'reviewed' then
+    perform public.notify(
+      array(select id from public.profiles where department_id = new.department_id and active and role = 'manager'),
+      new.department_id, 'tasks', null, 'month_end',
+      format('%s reviewed the %s month-end declaration, ready for your approval', who, m), auth.uid());
+  elsif new.status = 'approved' then
+    perform public.notify(
+      array(select distinct owner_id from public.month_end_entries where period_id = new.id and owner_id is not null)
+        || array(select id from public.profiles where department_id = new.department_id and active and role = 'senior'),
+      new.department_id, 'tasks', null, 'month_end',
+      format('%s approved the %s month-end declaration', who, m), auth.uid());
+  else
+    perform public.notify(
+      array(select id from public.profiles
+            where department_id = new.department_id and active and role in ('manager', 'senior')),
+      new.department_id, 'tasks', null, 'month_end',
+      format('%s reopened the %s month-end declaration', who, m), auth.uid());
+  end if;
+  return null;
+end $$;
+
+drop trigger if exists month_end_periods_after on public.month_end_periods;
+create trigger month_end_periods_after after update on public.month_end_periods
+  for each row execute function public.month_end_periods_after();
+
+-- ---------- Start a month: copy the master list -------------------------
+create or replace function public.month_end_start(p_dept uuid, p_period date) returns bigint
+language plpgsql security definer set search_path = public as $$
+declare
+  p   date := date_trunc('month', p_period)::date;
+  pid bigint;
+begin
+  if not public.has_feature(p_dept, 'month_end') or not public.month_end_lead(p_dept) then
+    raise exception 'Only a senior executive or the manager can start a month.' using errcode = '42501';
+  end if;
+  select id into pid from public.month_end_periods where department_id = p_dept and period = p;
+  if pid is not null then
+    return pid;
+  end if;
+  insert into public.month_end_periods (department_id, period, created_by)
+  values (p_dept, p, auth.uid()) returning id into pid;
+  insert into public.month_end_entries (period_id, department_id, item_id, code, category, title, owner_id, due_date, position)
+  select pid, p_dept, i.id, i.code, i.category, i.title, i.owner_id,
+         least((p + interval '1 month')::date + (i.due_day - 1), (p + interval '2 months')::date - 1),
+         i.position
+  from public.month_end_items i
+  where i.department_id = p_dept and i.active
+  order by i.position, i.id;
+  return pid;
+end $$;
+
+-- ---------- Daily reminders (07:05 Colombo, and whenever the page opens) ----
+create or replace function public.month_end_check() returns void
+language plpgsql security definer set search_path = public as $$
+declare today date := public.app_today();
+begin
+  perform set_config('app.system', 'on', true);
+
+  -- due today → the owner, once
+  with due as (
+    update public.month_end_entries e set reminded_on = today
+      from public.month_end_periods p
+     where p.id = e.period_id and p.status = 'open' and not e.done
+       and e.due_date = today and e.reminded_on is distinct from today and e.owner_id is not null
+    returning e.department_id, e.owner_id, p.period
+  ), grouped as (
+    select department_id, owner_id, period, count(*) as n from due group by 1, 2, 3
+  )
+  insert into public.notifications (user_id, department_id, app_key, kind, message)
+  select g.owner_id, g.department_id, 'tasks', 'month_end',
+         format('%s month-end declaration: %s line%s due today', public.month_end_label(g.period),
+                g.n, case when g.n = 1 then '' else 's' end)
+  from grouped g join public.profiles pr on pr.id = g.owner_id and pr.active;
+
+  -- overdue → the owner and the department's seniors and managers, once per line
+  with late as (
+    update public.month_end_entries e set overdue_notified = true
+      from public.month_end_periods p
+     where p.id = e.period_id and p.status = 'open' and not e.done
+       and e.due_date < today and not e.overdue_notified
+    returning e.department_id, e.owner_id, e.title, e.due_date, p.period
+  ), recipients as (
+    select distinct l.*, r.uid
+    from late l
+    cross join lateral unnest(
+      array[l.owner_id] || array(select id from public.profiles
+                                 where department_id = l.department_id and active and role in ('manager', 'senior'))
+    ) as r(uid)
+    where r.uid is not null
+  )
+  insert into public.notifications (user_id, department_id, app_key, kind, message)
+  select r.uid, r.department_id, 'tasks', 'month_end',
+         case when r.uid = r.owner_id
+              then format('Month-end declaration overdue: "%s" was due %s', r.title, public.fmt_date(r.due_date))
+              else format('Month-end declaration overdue: %s — "%s" was due %s',
+                          coalesce(public.name_of(r.owner_id), 'no owner'), r.title, public.fmt_date(r.due_date)) end
+  from recipients r join public.profiles pr on pr.id = r.uid and pr.active;
+
+  perform set_config('app.system', 'off', true);
+end $$;
+
+-- ---------- Row level security ------------------------------------------
+alter table public.month_end_items   enable row level security;
+alter table public.month_end_periods enable row level security;
+alter table public.month_end_entries enable row level security;
+
+drop policy if exists month_end_items_select on public.month_end_items;
+create policy month_end_items_select on public.month_end_items for select to authenticated
+  using (public.month_end_on(department_id));
+drop policy if exists month_end_items_write on public.month_end_items;
+create policy month_end_items_write on public.month_end_items for all to authenticated
+  using (public.month_end_lead(department_id))
+  with check (public.month_end_lead(department_id));
+
+drop policy if exists month_end_periods_select on public.month_end_periods;
+create policy month_end_periods_select on public.month_end_periods for select to authenticated
+  using (public.month_end_on(department_id));
+-- new months only through month_end_start(); status steps are checked by the trigger
+drop policy if exists month_end_periods_update on public.month_end_periods;
+create policy month_end_periods_update on public.month_end_periods for update to authenticated
+  using (public.month_end_lead(department_id))
+  with check (public.month_end_lead(department_id));
+drop policy if exists month_end_periods_delete on public.month_end_periods;
+create policy month_end_periods_delete on public.month_end_periods for delete to authenticated
+  using (status = 'open'
+         and (public.is_admin()
+              or (department_id = public.my_dept() and public.has_feature(department_id, 'month_end')
+                  and public.my_role() = 'manager')));
+
+drop policy if exists month_end_entries_select on public.month_end_entries;
+create policy month_end_entries_select on public.month_end_entries for select to authenticated
+  using (public.month_end_on(department_id));
+drop policy if exists month_end_entries_insert on public.month_end_entries;
+create policy month_end_entries_insert on public.month_end_entries for insert to authenticated
+  with check (public.month_end_lead(department_id));
+drop policy if exists month_end_entries_update on public.month_end_entries;
+create policy month_end_entries_update on public.month_end_entries for update to authenticated
+  using (public.month_end_on(department_id) and (owner_id = auth.uid() or public.month_end_lead(department_id)))
+  with check (public.month_end_on(department_id));
+drop policy if exists month_end_entries_delete on public.month_end_entries;
+create policy month_end_entries_delete on public.month_end_entries for delete to authenticated
+  using (public.month_end_lead(department_id)
+         and exists (select 1 from public.month_end_periods p where p.id = period_id and p.status = 'open'));
+
+-- ---------- Permissions -------------------------------------------------
+revoke all on public.month_end_items, public.month_end_periods, public.month_end_entries from anon, authenticated;
+grant select, insert, update, delete on public.month_end_items   to authenticated;
+grant select, update, delete         on public.month_end_periods to authenticated;
+grant select, insert, update, delete on public.month_end_entries to authenticated;
+grant usage on all sequences in schema public to authenticated;
+
+revoke execute on function public.month_end_items_before()   from public, anon, authenticated;
+revoke execute on function public.month_end_periods_before() from public, anon, authenticated;
+revoke execute on function public.month_end_entries_before() from public, anon, authenticated;
+revoke execute on function public.month_end_entries_after()  from public, anon, authenticated;
+revoke execute on function public.month_end_periods_after()  from public, anon, authenticated;
+revoke execute on function public.month_end_start(uuid, date) from public, anon;
+grant  execute on function public.month_end_start(uuid, date) to authenticated;
+revoke execute on function public.month_end_check() from public, anon;
+grant  execute on function public.month_end_check() to authenticated;
+
+-- ---------- Daily reminder job (only if Cron is switched on) -------------
+do $$
+begin
+  if exists (select 1 from pg_extension where extname = 'pg_cron') then
+    perform cron.schedule('workspace-month-end-check', '35 1 * * *', 'select public.month_end_check();');
+  end if;
+end $$;
+
+
+-- =====================================================================
+--  WORKSPACE — phone alerts (step 7 of 8)
+--  Run after 01–06. Safe to run again.
+--
+--  Whatever lands in someone's bell is also sent to every phone / computer
+--  where they switched "Phone alerts" on (their account menu).
+--
+--  How it travels:  new notification → this database (pg_net) → the Edge
+--  Function "workspace-push" (supabase/functions/workspace-push) → Google /
+--  Apple / Mozilla / Microsoft push service → the device.
+--
+--  The admin turns it on once in Admin console → Phone alerts, which creates
+--  the signing keys. The private key is stored only here, in a table nobody
+--  can read from the app.
+-- =====================================================================
+
+-- pg_net lets the database call the Edge Function. (Supabase → Database → Extensions → pg_net)
+do $$
+begin
+  create extension if not exists pg_net with schema extensions;
+exception when others then
+  raise notice 'pg_net could not be switched on here (%). Turn it on in Database → Extensions.', sqlerrm;
+end $$;
+
+-- ---------- Tables ------------------------------------------------------
+-- One row per device that wants alerts
+create table if not exists public.workspace_push_subscriptions (
+  id            bigint generated always as identity primary key,
+  user_id       uuid not null references public.profiles(id) on delete cascade,
+  endpoint      text not null unique,
+  p256dh        text not null,
+  auth          text not null,
+  device        text not null default '',
+  created_at    timestamptz not null default now(),
+  last_seen_at  timestamptz not null default now()
+);
+create index if not exists workspace_push_subscriptions_user_idx on public.workspace_push_subscriptions (user_id);
+
+-- The one settings row (signing keys and where the Edge Function lives)
+create table if not exists public.workspace_push_config (
+  id            int primary key default 1 check (id = 1),
+  function_url  text not null,
+  public_key    text not null,
+  private_key   text not null,
+  subject       text not null,
+  api_key       text,
+  enabled       boolean not null default true,
+  updated_at    timestamptz not null default now(),
+  updated_by    uuid references public.profiles(id) on delete set null
+);
+
+-- Each batch handed to pg_net, so the admin page can show how sending went
+create table if not exists public.workspace_push_log (
+  id          bigint generated always as identity primary key,
+  request_id  bigint not null,
+  messages    int not null,
+  test        boolean not null default false,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.workspace_push_subscriptions enable row level security;
+alter table public.workspace_push_config        enable row level security;
+alter table public.workspace_push_log           enable row level security;
+
+-- people see (and remove) only their own devices; everything else goes through the functions below
+drop policy if exists workspace_push_subscriptions_own on public.workspace_push_subscriptions;
+create policy workspace_push_subscriptions_own on public.workspace_push_subscriptions for select to authenticated
+  using (user_id = auth.uid());
+
+revoke all on public.workspace_push_subscriptions, public.workspace_push_config, public.workspace_push_log
+  from anon, authenticated;
+grant select on public.workspace_push_subscriptions to authenticated;
+
+-- ---------- Helpers -----------------------------------------------------
+-- only the official push services (the same list the Edge Function accepts)
+create or replace function public.workspace_push_endpoint_ok(p_endpoint text) returns boolean
+language sql immutable as $$
+  select coalesce(p_endpoint ~ '^https://([a-z0-9-]+\.)*(fcm\.googleapis\.com|android\.googleapis\.com|push\.services\.mozilla\.com|push\.apple\.com|notify\.windows\.com)(:443)?/', false)
+$$;
+
+create or replace function public.workspace_push_title(p_kind text) returns text
+language sql immutable as $$
+  select case p_kind
+    when 'assigned'    then 'New task'
+    when 'reassigned'  then 'Task handed over'
+    when 'done'        then 'Task completed'
+    when 'waiting'     then 'Waiting on something'
+    when 'due_moved'   then 'Deadline moved'
+    when 'edited'      then 'Task updated'
+    when 'comment'     then 'New comment'
+    when 'helper'      then 'You''re helping on a task'
+    when 'overdue'     then 'Missed deadline'
+    when 'due_today'   then 'Due today'
+    when 'due_soon'    then 'Coming up'
+    when 'weekly'      then 'Weekly summary'
+    when 'month_end'   then 'Month-end'
+    when 'signup'      then 'New sign-up'
+    when 'shared'      then 'Note shared with you'
+    when 'review'      then 'Ready for your sign-off'
+    when 'signed_off'  then 'Signed off'
+    when 'sent_back'   then 'Sent back to you'
+    when 'unseen'      then 'Not opened yet'
+    when 'reminder'    then 'Reminder'
+    when 'escalated'   then 'Escalated'
+    when 'test'        then 'Phone alerts are working'
+    else 'Workspace'
+  end
+$$;
+
+-- hand one batch to the Edge Function (pg_net sends it after the transaction commits)
+create or replace function public.workspace_push_post(p_msgs jsonb, p_test boolean default false) returns bigint
+language plpgsql security definer set search_path = public as $$
+declare
+  cfg public.workspace_push_config;
+  rid bigint;
+begin
+  select * into cfg from public.workspace_push_config where id = 1;
+  if not found or jsonb_array_length(coalesce(p_msgs, '[]')) = 0 then
+    return null;
+  end if;
+  rid := net.http_post(
+    url := cfg.function_url,
+    body := jsonb_build_object(
+      'vapid', jsonb_build_object('public_key', cfg.public_key, 'private_key', cfg.private_key, 'subject', cfg.subject),
+      'messages', p_msgs),
+    headers := jsonb_build_object('Content-Type', 'application/json')
+               || case when cfg.api_key is not null
+                       then jsonb_build_object('apikey', cfg.api_key, 'Authorization', 'Bearer ' || cfg.api_key)
+                       else '{}'::jsonb end,
+    timeout_milliseconds := 15000);
+  insert into public.workspace_push_log (request_id, messages, test) values (rid, jsonb_array_length(p_msgs), p_test);
+  delete from public.workspace_push_log where id < (select max(id) - 300 from public.workspace_push_log);
+  return rid;
+end $$;
+
+-- forget devices the push service says are gone, and devices unused for four months
+create or replace function public.workspace_push_cleanup() returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if to_regclass('net._http_response') is not null then
+    delete from public.workspace_push_subscriptions s
+     using (select jsonb_array_elements_text(r.content::jsonb -> 'gone') as endpoint
+              from net._http_response r
+              join public.workspace_push_log l on l.request_id = r.id
+             where r.status_code = 200 and r.content like '{"workspace_push":true%') g
+     where s.endpoint = g.endpoint;
+  end if;
+  delete from public.workspace_push_subscriptions where last_seen_at < now() - interval '120 days';
+end $$;
+
+-- ---------- New notifications → phones ------------------------------------
+create or replace function public.workspace_push_notify() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  batch jsonb;
+begin
+  if not exists (select 1 from public.workspace_push_config where id = 1 and enabled) then
+    return null;
+  end if;
+  begin
+    perform public.workspace_push_cleanup();
+    for batch in
+      select jsonb_agg(m)
+      from (select jsonb_build_object(
+                     'endpoint', s.endpoint, 'p256dh', s.p256dh, 'auth', s.auth,
+                     'title', public.workspace_push_title(f.kind),
+                     'body', left(f.message, 400),
+                     'notice', f.id,
+                     'tag', coalesce(f.app_key, 'workspace') || '-' || coalesce(f.ref_id::text, f.kind)) as m,
+                   (row_number() over (order by f.id, s.id) - 1) / 200 as chunk
+              from fresh f
+              join public.workspace_push_subscriptions s on s.user_id = f.user_id) x
+      group by chunk
+    loop
+      perform public.workspace_push_post(batch);
+    end loop;
+  exception when others then
+    raise warning 'Workspace phone alerts: %', sqlerrm;   -- an alert problem never stops the app
+  end;
+  return null;
+end $$;
+
+drop trigger if exists workspace_push_notify on public.notifications;
+create trigger workspace_push_notify after insert on public.notifications
+  referencing new table as fresh
+  for each statement execute function public.workspace_push_notify();
+
+-- ---------- For everyone: this device's alerts ----------------------------
+create or replace function public.workspace_push_public_key() returns text
+language sql stable security definer set search_path = public as $$
+  select public_key from public.workspace_push_config where id = 1 and enabled
+$$;
+
+create or replace function public.workspace_push_save(p_endpoint text, p_p256dh text, p_auth text, p_device text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null or not exists (select 1 from public.profiles where id = auth.uid()) then
+    raise exception 'Please sign in first.' using errcode = '42501';
+  end if;
+  if not public.workspace_push_endpoint_ok(p_endpoint) then
+    raise exception 'This device''s alert address isn''t one we can send to.';
+  end if;
+  if length(coalesce(p_p256dh, '')) < 80 or length(coalesce(p_auth, '')) < 16 then
+    raise exception 'This device sent incomplete alert keys.';
+  end if;
+  insert into public.workspace_push_subscriptions (user_id, endpoint, p256dh, auth, device)
+  values (auth.uid(), p_endpoint, p_p256dh, p_auth, left(coalesce(p_device, ''), 60))
+  on conflict (endpoint) do update
+     set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth,
+         device = excluded.device, last_seen_at = now();
+end $$;
+
+create or replace function public.workspace_push_forget(p_endpoint text) returns void
+language sql security definer set search_path = public as $$
+  delete from public.workspace_push_subscriptions where endpoint = p_endpoint and user_id = auth.uid()
+$$;
+
+-- ---------- For the admin: set up, check, test ----------------------------
+create or replace function public.workspace_push_setup(p_url text, p_public text, p_private text,
+                                                      p_subject text, p_api_key text)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  old_key text;
+begin
+  if not public.is_admin() then
+    raise exception 'Only the administrator can set up phone alerts.' using errcode = '42501';
+  end if;
+  if coalesce(p_url, '') !~ '^https?://[^ ]+/functions/v1/workspace-push$' then
+    raise exception 'That doesn''t look like the address of the workspace-push function.';
+  end if;
+  if length(coalesce(p_public, '')) < 80 or length(coalesce(p_private, '')) < 40
+     or coalesce(p_subject, '') !~ '^(https://|mailto:)' then
+    raise exception 'The new keys are incomplete. Please try again.';
+  end if;
+  select public_key into old_key from public.workspace_push_config where id = 1;
+  insert into public.workspace_push_config (id, function_url, public_key, private_key, subject, api_key, enabled, updated_at, updated_by)
+  values (1, p_url, p_public, p_private, p_subject, nullif(p_api_key, ''), true, now(), auth.uid())
+  on conflict (id) do update
+     set function_url = excluded.function_url, public_key = excluded.public_key, private_key = excluded.private_key,
+         subject = excluded.subject, api_key = excluded.api_key, enabled = true,
+         updated_at = now(), updated_by = auth.uid();
+  -- devices signed up with the old keys can't receive anything any more; they re-join by themselves next time
+  if old_key is distinct from p_public then
+    delete from public.workspace_push_subscriptions;
+  end if;
+end $$;
+
+create or replace function public.workspace_push_enable(p_on boolean) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then
+    raise exception 'Only the administrator can do that.' using errcode = '42501';
+  end if;
+  update public.workspace_push_config set enabled = p_on, updated_at = now(), updated_by = auth.uid() where id = 1;
+end $$;
+
+create or replace function public.workspace_push_status() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  cfg public.workspace_push_config;
+  recent jsonb := '[]';
+begin
+  if not public.is_admin() then
+    raise exception 'Only the administrator can see this.' using errcode = '42501';
+  end if;
+  select * into cfg from public.workspace_push_config where id = 1;
+  if to_regclass('net._http_response') is not null then
+    execute $q$
+      select coalesce(jsonb_agg(x order by x.at desc), '[]') from (
+        select l.created_at as at, l.messages, l.test, r.status_code as status, r.error_msg as error,
+               r.timed_out, case when r.content like '{"workspace_push":true%' then r.content::jsonb end as result
+          from public.workspace_push_log l
+          left join net._http_response r on r.id = l.request_id
+         order by l.id desc limit 12) x $q$ into recent;
+  end if;
+  return jsonb_build_object(
+    'configured', cfg.id is not null,
+    'enabled', coalesce(cfg.enabled, false),
+    'function_url', cfg.function_url,
+    'updated_at', cfg.updated_at,
+    'pg_net', to_regprocedure('net.http_post(text,jsonb,jsonb,jsonb,integer)') is not null,
+    'devices', (select coalesce(jsonb_agg(jsonb_build_object('user_id', s.user_id, 'device', s.device,
+                                                             'last_seen_at', s.last_seen_at) order by s.last_seen_at desc), '[]')
+                  from public.workspace_push_subscriptions s),
+    'recent', recent);
+end $$;
+
+-- a test alert to the admin's own devices (returns the request number to check on)
+create or replace function public.workspace_push_test() returns bigint
+language plpgsql security definer set search_path = public as $$
+declare
+  msgs jsonb;
+begin
+  if not public.is_admin() then
+    raise exception 'Only the administrator can do that.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.workspace_push_config where id = 1) then
+    raise exception 'Turn phone alerts on first.';
+  end if;
+  select jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth,
+                                      'title', public.workspace_push_title('test'),
+                                      'body', 'This is how Workspace alerts will look on this device.',
+                                      'notice', null, 'tag', 'workspace-test'))
+    into msgs
+    from public.workspace_push_subscriptions where user_id = auth.uid();
+  if msgs is null then
+    raise exception 'None of your devices has phone alerts on yet. Open your account menu (top right) on your phone and turn on Phone alerts.';
+  end if;
+  return public.workspace_push_post(msgs, true);
+end $$;
+
+create or replace function public.workspace_push_result(p_request bigint) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  out jsonb;
+begin
+  if not public.is_admin() then
+    raise exception 'Only the administrator can see this.' using errcode = '42501';
+  end if;
+  if to_regclass('net._http_response') is null then
+    return jsonb_build_object('done', false);
+  end if;
+  execute $q$
+    select jsonb_build_object('done', true, 'status', r.status_code, 'error', r.error_msg, 'timed_out', r.timed_out,
+                              'result', case when r.content like '{"workspace_push":true%' then r.content::jsonb end,
+                              'text', left(r.content, 300))
+      from net._http_response r where r.id = $1 $q$ into out using p_request;
+  return coalesce(out, jsonb_build_object('done', false));
+end $$;
+
+-- ---------- Permissions -------------------------------------------------
+revoke execute on function public.workspace_push_post(jsonb, boolean) from public, anon, authenticated;
+revoke execute on function public.workspace_push_cleanup()            from public, anon, authenticated;
+revoke execute on function public.workspace_push_notify()             from public, anon, authenticated;
+revoke execute on function public.workspace_push_public_key()         from public, anon;
+revoke execute on function public.workspace_push_save(text, text, text, text) from public, anon;
+revoke execute on function public.workspace_push_forget(text)         from public, anon;
+revoke execute on function public.workspace_push_setup(text, text, text, text, text) from public, anon;
+revoke execute on function public.workspace_push_enable(boolean)      from public, anon;
+revoke execute on function public.workspace_push_status()             from public, anon;
+revoke execute on function public.workspace_push_test()               from public, anon;
+revoke execute on function public.workspace_push_result(bigint)       from public, anon;
+grant execute on function public.workspace_push_public_key()          to authenticated;
+grant execute on function public.workspace_push_save(text, text, text, text) to authenticated;
+grant execute on function public.workspace_push_forget(text)          to authenticated;
+grant execute on function public.workspace_push_setup(text, text, text, text, text) to authenticated;
+grant execute on function public.workspace_push_enable(boolean)       to authenticated;
+grant execute on function public.workspace_push_status()              to authenticated;
+grant execute on function public.workspace_push_test()                to authenticated;
+grant execute on function public.workspace_push_result(bigint)        to authenticated;
+
+
+-- =====================================================================
+--  WORKSPACE — "Compliance calendar" department feature (step 8 of 8)
+--  Run after 02_app_tasks.sql. Safe to run again.
+--
+--  The department's recurring obligations (tax returns, statutory payments,
+--  renewals …) in one place. Each obligation is a repeating task: it has an
+--  owner, a deadline, an early reminder ("N days before") and, when it is
+--  finished, the next one is created on schedule. This page shows what's
+--  next, who owns it, how many days are left, and whether past ones were
+--  finished on time.
+--
+--  OFF for every department until the admin ticks it in
+--  Admin console → Departments & apps.
+-- =====================================================================
+
+-- this name must be ours (the project also holds an older app's tables)
+do $$
+begin
+  if to_regclass('public.compliance_items') is not null
+     and not exists (select 1 from information_schema.columns where table_schema = 'public'
+                     and table_name = 'compliance_items' and column_name = 'series_id') then
+    raise exception 'A table called compliance_items already exists and was not made by Workspace. Nothing was changed — send this message to whoever looks after Workspace.';
+  end if;
+end $$;
+
+create table if not exists public.compliance_items (
+  id             bigint generated always as identity primary key,
+  department_id  uuid not null references public.departments(id) on delete cascade,
+  name           text not null check (length(trim(name)) > 0),
+  authority      text not null default '',     -- who it's for: IRD, EPF, Registrar of Companies …
+  notes          text not null default '',
+  series_id      bigint references public.tasks(id) on delete set null,   -- the repeating task behind it
+  active         boolean not null default true,
+  position       double precision not null default 0,
+  created_by     uuid default auth.uid() references public.profiles(id) on delete set null,
+  created_at     timestamptz not null default now()
+);
+create index if not exists compliance_items_dept_idx on public.compliance_items (department_id, position);
+
+-- ---------- Who can do what ----------------------------------------------
+create or replace function public.compliance_on(p_dept uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_admin()
+      or (p_dept = public.my_dept() and public.has_feature(p_dept, 'compliance')
+          and public.user_has_app(auth.uid(), 'tasks', p_dept));
+$$;
+
+-- add, change and remove obligations: admin, or the department's managers and senior executives
+create or replace function public.compliance_lead(p_dept uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_admin()
+      or (public.compliance_on(p_dept) and public.my_role() in ('manager', 'senior'));
+$$;
+
+create or replace function public.compliance_items_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if pg_trigger_depth() > 1 then
+    return new;
+  end if;
+  if tg_op = 'INSERT' then
+    new.department_id := case when public.is_admin() and new.department_id is not null
+                              then new.department_id else public.dept_of(auth.uid()) end;
+    new.created_by := coalesce(auth.uid(), new.created_by);
+    new.created_at := now();
+  else
+    new.department_id := old.department_id;
+    new.created_by := old.created_by;
+    new.created_at := old.created_at;
+  end if;
+  if new.series_id is not null
+     and (select department_id from public.tasks where id = new.series_id) is distinct from new.department_id then
+    raise exception 'That task belongs to another department.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists compliance_items_before on public.compliance_items;
+create trigger compliance_items_before before insert or update on public.compliance_items
+  for each row execute function public.compliance_items_before();
+
+-- Add an obligation in one step: its first (repeating) task and the calendar entry together.
+-- Runs with the caller's own rights, so the usual rules decide who may give the task to whom.
+create or replace function public.compliance_add(p_dept uuid, p_name text, p_authority text, p_notes text,
+                                                 p_owner uuid, p_due date, p_repeat text, p_remind_days int)
+returns bigint language plpgsql set search_path = public as $$
+declare
+  tid bigint;
+  cid bigint;
+begin
+  if not public.compliance_lead(p_dept) then
+    raise exception 'Only managers and senior executives can add obligations.' using errcode = '42501';
+  end if;
+  if p_repeat is null then
+    raise exception 'Choose how often it repeats.';
+  end if;
+  insert into public.tasks (title, notes, assignee_id, due_date, repeat, remind_days, priority)
+  values (trim(p_name), coalesce(p_notes, ''), p_owner, p_due, p_repeat, p_remind_days, 'high')
+  returning id into tid;
+  if (select department_id from public.tasks where id = tid) is distinct from p_dept then
+    raise exception 'The owner must be someone in this department.';
+  end if;
+  insert into public.compliance_items (department_id, name, authority, notes, series_id, position)
+  values (p_dept, trim(p_name), coalesce(trim(p_authority), ''), coalesce(p_notes, ''), tid,
+          coalesce((select max(position) from public.compliance_items where department_id = p_dept), 0) + 1)
+  returning id into cid;
+  return cid;
+end $$;
+
+-- ---------- Row level security ------------------------------------------
+alter table public.compliance_items enable row level security;
+
+drop policy if exists compliance_items_select on public.compliance_items;
+create policy compliance_items_select on public.compliance_items for select to authenticated
+  using (public.compliance_on(department_id));
+drop policy if exists compliance_items_insert on public.compliance_items;
+create policy compliance_items_insert on public.compliance_items for insert to authenticated
+  with check (public.compliance_lead(department_id));
+drop policy if exists compliance_items_update on public.compliance_items;
+create policy compliance_items_update on public.compliance_items for update to authenticated
+  using (public.compliance_lead(department_id)) with check (public.compliance_lead(department_id));
+drop policy if exists compliance_items_delete on public.compliance_items;
+create policy compliance_items_delete on public.compliance_items for delete to authenticated
+  using (public.compliance_lead(department_id));
+
+revoke all on public.compliance_items from anon, authenticated;
+grant select, insert, update, delete on public.compliance_items to authenticated;
+grant usage on all sequences in schema public to authenticated;
+
+revoke execute on function public.compliance_items_before() from public, anon, authenticated;
+revoke execute on function public.compliance_add(uuid, text, text, text, uuid, date, text, int) from public, anon;
+grant  execute on function public.compliance_add(uuid, text, text, text, uuid, date, text, int) to authenticated;

@@ -18,15 +18,18 @@ COPY_ICON = '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
 OK = 'Success. No rows returned'
 
 steps_update = [
-  dict(key='u4', num='U4', title='Phone alerts, sign-off, Got it, compliance calendar, trends, search', badge='now',
-       file='updates/004_alerts_signoff_compliance_search.sql',
-       desc='Adds phone alerts, checker sign-off, "Got it" for new tasks, early reminders, the Compliance calendar feature (off until you tick it for Finance), Trends and search. <b>It also includes everything from U3</b>, so run this one even if U3 was never run. Keeps all your data; safe to run again; doesn\'t touch your older app\'s tables.',
+  dict(key='u5', num='U5', title='Reminders, pin & follow, escalation (includes U3 and U4)', badge='now',
+       file='updates/005_reminders_home_escalation.sql',
+       desc='Adds quick reminders, pin &amp; follow, and escalation of work 3+ days late. <b>It also includes everything from U3 and U4</b> (sign-off, Got it, phone alerts, compliance calendar, trends, search, month-end), so this is the only one to run, whichever of those you ran before. Keeps all your data; safe to run again; doesn\'t touch your older app\'s tables.',
        expect=OK, note='Supabase will warn about "destructive operations" — click <b>Run this query</b>. It only replaces older versions of the app\'s own rules.', cls='step-update'),
 ]
 steps_done = [
+  dict(key='u4', num='U4', title='Phone alerts, sign-off, Got it, compliance calendar, trends, search', badge='done',
+       file='updates/004_alerts_signoff_compliance_search.sql',
+       desc='Included in U5 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u3', num='U3', title='Deadline history, repeating tasks, month-end declaration', badge='done',
        file='updates/003_history_repeat_month_end.sql',
-       desc='Included in U4 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U5 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u2', num='U2', title='Helpers, checklists, files, Today planner, Notes', badge='done',
        file='updates/002_helpers_checklist_files_today_notes.sql',
        desc='Already run on your database (6 Oct). No need to run again.', expect='a small report table', cls='is-done static-done'),
@@ -39,8 +42,8 @@ steps_fresh = [
   dict(key='1', num='1', title='Platform', file='01_platform.sql', desc='Departments, people, the admin account, app access and notifications.', expect=OK),
   dict(key='2', num='2', title='Tasks app', file='02_app_tasks.sql', desc='Tasks, helpers, checklists, files, Today time blocks, comments, history, deadline alerts and who-can-see-what rules. Also creates the private file storage.', expect=OK),
   dict(key='3', num='3', title='Daily notes feature', file='03_feature_daily_notes.sql', desc='The example department-only feature. Stays off until you tick it for a department.', expect=OK),
-  dict(key='4', num='4', title='Morning deadline check', file='04_daily_check.sql', desc='Schedules the 7:00 am missed-deadline and due-today alerts.',
-       expect='Success, with one row showing a number (the job id)', note='If it shows an error mentioning <code>pg_cron</code>: left menu → <b>Integrations</b> → <b>Cron</b> → enable it, then run this one again.'),
+  dict(key='4', num='4', title='Morning deadline check', file='04_daily_check.sql', desc='Schedules the 7:00 am missed-deadline and due-today alerts, and the every-minute check that sends quick reminders.',
+       expect='Success, with a row showing a number (the job id)', note='If it shows an error mentioning <code>pg_cron</code>: left menu → <b>Integrations</b> → <b>Cron</b> → enable it, then run this one again.'),
   dict(key='5', num='5', title='Notes app', file='05_app_notes.sql', desc='Pages and sub-pages, private or shared, with files and links to tasks. Off until you switch it on for a department.', expect=OK),
   dict(key='6', num='6', title='Month-end declaration feature', file='06_feature_month_end.sql', desc='The monthly self-declaration checklist. Off until you tick it for a department.', expect=OK),
   dict(key='7', num='7', title='Phone alerts', file='07_push.sql', desc='Sends whatever lands in the bell to people\'s phones (with the workspace-push Edge Function). Set up in Admin console → Phone alerts.', expect=OK),
@@ -80,7 +83,7 @@ all_steps = steps_update + steps_done + steps_fresh
 body = f'''<div class="wrap">
   <header>
     <h1>Workspace SQL setup</h1>
-    <p>Copy a script, paste it into Supabase, run it. Your database is already set up, so only <b>U4</b> at the top is needed now.</p>
+    <p>Copy a script, paste it into Supabase, run it. Your database is already set up, so only <b>U5</b> at the top is needed now.</p>
   </header>
 
   <div class="how">
@@ -104,7 +107,7 @@ body = f'''<div class="wrap">
 {chr(10).join(section(s) for s in steps_fresh)}
   </div>
 
-  <footer>After U4: deploy the <b>workspace-push</b> Edge Function and switch phone alerts on in the app (Admin console → <b>Phone alerts</b> shows each step), then Admin console → <b>Departments &amp; apps</b> → under Finance, tick <b>Compliance calendar</b> (and <b>Month-end declaration</b> if it isn't ticked yet). After a fresh install: Authentication → Sign In / Providers → Email → turn <b>Confirm email</b> off, and copy the Project URL and Publishable key from <b>Connect</b>.</footer>
+  <footer>After U5 (if you hadn't done it after U4): deploy the <b>workspace-push</b> Edge Function and switch phone alerts on in the app (Admin console → <b>Phone alerts</b> shows each step), then Admin console → <b>Departments &amp; apps</b> → under Finance, tick <b>Compliance calendar</b> (and <b>Month-end declaration</b> if it isn't ticked yet). After a fresh install: Authentication → Sign In / Providers → Email → turn <b>Confirm email</b> off, and copy the Project URL and Publishable key from <b>Connect</b>.</footer>
 </div>
 
 <div class="toast" id="toast" hidden></div>

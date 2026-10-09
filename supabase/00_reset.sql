@@ -9,6 +9,7 @@
 drop trigger if exists on_auth_user_created on auth.users;
 
 drop table if exists
+  public.task_reminders, public.task_follows,
   public.compliance_items, public.workspace_push_log, public.workspace_push_config, public.workspace_push_subscriptions,
   public.month_end_entries, public.month_end_periods, public.month_end_items,
   public.notes_task_links, public.notes_files, public.notes_shares, public.notes_pages,
@@ -43,7 +44,9 @@ begin
       'workspace_push_endpoint_ok','workspace_push_title','workspace_push_post','workspace_push_cleanup',
       'workspace_push_notify','workspace_push_public_key','workspace_push_save','workspace_push_forget',
       'workspace_push_setup','workspace_push_enable','workspace_push_status','workspace_push_test','workspace_push_result',
-      'compliance_on','compliance_lead','compliance_items_before','compliance_add'])
+      'compliance_on','compliance_lead','compliance_items_before','compliance_add',
+      'task_visible_to','task_follows_before','task_follower_ids','task_reminder_next','task_reminders_before',
+      'task_reminders_due'])
   loop
     execute 'drop function if exists ' || r.sig || ' cascade';
   end loop;
@@ -61,6 +64,6 @@ begin
   -- old scheduled jobs, if Cron was set up before
   if exists (select 1 from pg_namespace where nspname = 'cron') then
     perform cron.unschedule(jobname) from cron.job
-    where jobname in ('team-tasks-daily-check', 'workspace-daily-check', 'workspace-month-end-check');
+    where jobname in ('team-tasks-daily-check', 'workspace-daily-check', 'workspace-month-end-check', 'workspace-reminders');
   end if;
 end $$;

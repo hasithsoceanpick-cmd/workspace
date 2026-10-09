@@ -33,7 +33,7 @@ python3 -m http.server "$APP_PORT" --directory .dist > .web.log 2>&1 & WEB=$!
 trap 'kill $MOCK $WEB 2>/dev/null' EXIT
 sleep 2
 
-for t in test_platform test_tasks test_delete_people test_admin_notes test_new_features test_round3 test_round5; do
+for t in test_platform test_tasks test_delete_people test_admin_notes test_new_features test_round3 test_round5 test_round6; do
   node seed.mjs > /dev/null
   echo "== $t"
   python3 -W ignore "$t.py" 2>&1 | summary

@@ -26,6 +26,8 @@ Runs on **Supabase** (database + logins) and **Vercel** (hosting), both on free 
 | **Month-end declaration** (where switched on) | Manage the list | Manage, review, **approve** | Manage, **review** | Tick own lines |
 | **Compliance calendar** (where switched on) | Add / change obligations | Add / change obligations | Add / change obligations | See it; own their tasks |
 | **Phone alerts** | Set up (Admin → Phone alerts) | Turn on per phone | Turn on per phone | Turn on per phone |
+| **Quick reminders** for | Self + anyone in the department | Self + anyone in own department | Self + Members | Self |
+| Opens the app on | Home | Home | Home | Today |
 
 Your admin login is your normal account. You're also Finance's Manager, and the
 department switcher lets you step into any other department. Being admin is set in the
@@ -33,7 +35,7 @@ database only: no screen in the app can make someone else an admin.
 
 **How departments are kept apart.** Every record carries its department, and the
 database itself refuses to return another department's data. That holds even if
-someone pokes at the API directly. 300+ automated checks cover this (`tests/`).
+someone pokes at the API directly. 350+ automated checks cover this (`tests/`).
 Files and screenshots sit in private storage behind the same rules (10 MB per file).
 
 ---
@@ -49,6 +51,22 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
 - The admin sets phone alerts up once in **Admin console → Phone alerts** (it shows each step).
 
 ## The Tasks app
+
+- **Home** (Managers, Senior Executives — where they land): sign-offs waiting for you, overdue work by person
+  (with escalations), work not opened yet, what's due in the next 7 days, your reminders today, and — where
+  switched on — compliance deadlines coming up and the month-end declaration status.
+- **New**: work someone gives you waits here (with a count on the tab) until you press **Got it**; only then does
+  it join your lists, Today and calendar. *Got it for all* clears the lot.
+- **Quick reminders** (the clock button in the top bar, on every page): type a line, tap *In 1 hour / Today 5 pm /
+  Tomorrow 9 am* or pick a time, optionally repeat (every day / weekday / week / month). At that time it pops up in
+  the bell and on your phone. Snooze, mark done, or turn it into a task. Managers and senior executives can set
+  one for someone in their team ("Reminder from Hasith: …"). From a task: **⏰ Remind** sets one about that task.
+  *All reminders* lists what's due, coming up, repeating, and what you set for others.
+- **Escalation**: a task still not finished **3 days after its deadline** goes to the department's managers (the
+  owner is told too) and carries a red **Escalated** flag on its card, the board and the calendar, until it's
+  finished or given a new deadline.
+- **Pin & follow** (in a task's panel): ☆ **Pin** keeps a task at the top of your list; **Follow** gives you its
+  alerts (comments, deadline moves, finished, escalated) even if it isn't yours. *Following* is a filter in Tasks.
 
 - **Today** (opens first): plan your day on a 07:00–20:30 timeline. Drag tasks in from the left (or press **+**),
   click an empty slot to add your own block (Lunch, a meeting…), drag blocks to move them and pull the
@@ -93,6 +111,8 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
 - Each page is **Private** until its owner shares it with the **whole department** or **chosen people**,
   as *can view* or *can edit*. Sub-pages follow their top-level page.
 - **Link pages to tasks**: from the page, or from a task's *Notes pages* section.
+- **→ Task**: put the cursor on a line (e.g. in meeting notes), press **→ Task**, pick who and when — the line
+  becomes a task, links to it ("→ Task #18", Ctrl+click opens it) and shows under *Linked tasks*.
 - If two people edit the same page at once, the second save is stopped and they choose whose version to keep.
 - Off until you turn it on: **Admin console → Departments & apps → Notes** (whole department or chosen people).
 
@@ -172,6 +192,10 @@ When a change needs a database update, it comes as a file in `supabase/updates/`
 | `002_helpers_checklist_files_today_notes.sql` | Helpers, checklists, files & screenshots, Today planner, Notes app |
 | `003_history_repeat_month_end.sql` | Deadline history, repeating tasks, Monday summary alert, older logins, Month-end declaration |
 | `004_alerts_signoff_compliance_search.sql` | Phone alerts, sign-off, Got it, early reminders, Compliance calendar, Trends, search (includes 003) |
+| `005_reminders_home_escalation.sql` | Quick reminders, pin & follow, escalation (includes 003 and 004 — run only this one) |
+
+From update 5 on, each update includes all the earlier ones (built with `tools/compose_update.py`), so only the
+newest needs running.
 
 **Phone alerts also need the sender** (once): Supabase → **Edge Functions** → **Deploy a new function** → **Via Editor** →
 name it `workspace-push` → paste `supabase/functions/workspace-push/index.ts` (or use *Copy sender code* in

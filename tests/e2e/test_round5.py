@@ -167,6 +167,7 @@ async def main():
         check(await k.locator('.drawer .title-input').count() == 1 and await k.locator('.drawer .title-input').input_value() == 'Send TT copy to bank',
               f'tapping the alert opens that task ({dtxt!r})')
         check(sql(f"select read_at is not null from notifications where id={notice or 0}") == 't', '…and marks it read')
+        await k.click('.ack-banner button:has-text("Got it")'); await k.wait_for_timeout(700)
         await k.keyboard.press('Escape')
 
         # the service worker shows a pushed alert
@@ -186,13 +187,13 @@ async def main():
             check(False, f'the phone shows the alert ({e})')
 
         # =============== Got it ===============
-        await k.goto(BASE + '/#/tasks/list'); await k.wait_for_timeout(1200)
-        row = k.locator('.task-row:has-text("Clear unreconciled items list")')
-        check(await row.locator('.pill.new').count() == 1, 'a task he has not opened shows "New"')
+        await k.goto(BASE + '/#/tasks/new'); await k.wait_for_timeout(1200)
+        row = k.locator('.new-card:has-text("Clear unreconciled items list")')
+        check(await row.count() == 1, 'a task he has not opened waits in his New tab')
         await k.click('.bell .icon-btn'); await k.wait_for_timeout(300)
         check("haven't opened yet" in await k.locator('.bell-pop').inner_text(), 'next morning he is reminded about unopened work')
         await k.keyboard.press('Escape'); await k.mouse.click(200, 700)
-        await row.click(); await k.wait_for_selector('.drawer .title-input')
+        await row.locator('.new-title').click(); await k.wait_for_selector('.drawer .title-input')
         check(await k.locator('.ack-banner').count() == 1, 'opening it asks him to press Got it')
         await k.screenshot(path=f'{OUT}/p3b_got_it.png')
         await k.click('.ack-banner button:has-text("Got it")'); await k.wait_for_timeout(800)
@@ -211,6 +212,7 @@ async def main():
         await n.keyboard.press('Escape')
 
         # =============== sign-off ===============
+        await k.goto(BASE + '/#/tasks/list'); await k.wait_for_timeout(900)
         await k.click('.task-row:has-text("Send TT copy to bank")'); await k.wait_for_selector('.drawer')
         await k.click('.drawer .seg-btn:has-text("Done")'); await k.wait_for_timeout(1000)
         check('Sent to Hasith for sign-off' in await toast(k), 'marking it done sends it to Hasith')
@@ -254,10 +256,12 @@ async def main():
         await h.click('button:has-text("Save changes")'); await h.wait_for_timeout(900)
         check(sql("select needs_check::text || remind_days from tasks where title='Print cheque register'") == 'false3', 'he switches sign-off off and sets a reminder 3 days before')
         await h.keyboard.press('Escape')
-        await k.goto(BASE + '/#/tasks/list'); await k.reload(); await k.wait_for_timeout(1500)
-        await k.click('.task-row:has-text("Print cheque register")'); await k.wait_for_selector('.drawer')
+        await k.goto(BASE + '/#/tasks/new'); await k.reload(); await k.wait_for_timeout(1500)
+        await k.click('.new-card:has-text("Print cheque register") .new-title'); await k.wait_for_selector('.drawer')
         check(await k.locator('.drawer label:has-text("Sign-off") select').is_disabled(), "the owner can't change the sign-off setting")
+        await k.click('.ack-banner button:has-text("Got it")'); await k.wait_for_timeout(700)
         await k.keyboard.press('Escape')
+        await k.goto(BASE + '/#/tasks/list'); await k.wait_for_timeout(900)
         await k.locator('.task-row:has-text("Print cheque register") .check').click(); await k.wait_for_timeout(900)
         check('Marked done' in await toast(k), 'no sign-off needed: done is done')
 

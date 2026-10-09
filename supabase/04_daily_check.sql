@@ -1,6 +1,7 @@
 -- =====================================================================
 --  WORKSPACE — morning deadline check (step 4 of 8)
 --
+--  Every minute it sends any quick reminders that are due.
 --  Every morning at 7:00 am Sri Lanka time it:
 --    • sends "Missed deadline" alerts for anything not done by its due date
 --    • sends each person one "Due today" reminder
@@ -19,5 +20,12 @@ select cron.schedule(
   $$ select public.run_deadline_check(); $$
 );
 
--- To check it's there:   select jobname, schedule from cron.job;
+-- Quick reminders: checked every minute.
+select cron.schedule(
+  'workspace-reminders',
+  '* * * * *',
+  $$ select public.task_reminders_due(); $$
+);
+
+-- To check they're there:   select jobname, schedule from cron.job;
 -- To remove it:          select cron.unschedule('workspace-daily-check');

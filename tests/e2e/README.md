@@ -21,6 +21,7 @@ demo (`seed.mjs`: Finance and HR, logins `*@demo.lk` / `password1`), then runs:
 | `test_new_features.py` | Today planner, helpers, checklists, screenshots/files/links, Notes (sharing, sub-pages, links to tasks, edit conflicts), phone layout |
 | `test_round3.py` | deadline history on cards, repeating tasks, Who's on what board, weekly summary, Excel exports (opened with openpyxl), older logins, Month-end declaration end to end |
 | `test_round5.py` | install as an app (manifest, icons, service worker, offline start, iPhone steps), phone alerts end to end (admin set-up, test alert, a member's phone gets a real encrypted alert, tapping opens the task, sign-out stops alerts), Got it, sign-off and send back, Compliance calendar (add, year view, export, members/HR), Trends (+ export), Ctrl+K search, phone layout |
+| `test_round6.py` | managers land on Home (tiles, panels), escalation (bell, red flags), the New tab (hidden from lists/Today/calendar until Got it), quick reminders (for self and a team member, due → bell, snooze, make it a task), pin & follow (+ alerts), notes → task, phone layout |
 | `test_first_run.py` | brand-new install: first sign-up becomes admin |
 
 Needs Node 20+, `psql`, and Python 3 with `pip install playwright pillow openpyxl` then

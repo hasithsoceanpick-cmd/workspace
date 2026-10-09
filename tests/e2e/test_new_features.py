@@ -100,6 +100,7 @@ async def main():
 
         # lead sees Kasun's day read-only
         n = await page_for(b, 'nadeesha@demo.lk')
+        await n.goto(BASE + '/#/tasks'); await n.wait_for_timeout(900)      # leads open on Home; Today is one tab away
         await n.select_option('.filters select', label="Kasun Silva's day"); await n.wait_for_timeout(900)
         check(await n.locator('.readonly-note').count() == 1, "senior views a member's day (read-only note)")
         check(await n.locator('.tl-block').count() == 2, "senior sees the member's blocks")

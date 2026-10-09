@@ -128,6 +128,10 @@ async def main():
         await h.goto(BASE + '/#/tasks/list'); await h.wait_for_timeout(800)
         # Sachini completes the admin's HR task -> admin gets notified with HR department
         s = await page_for(b, 'sachini@demo.lk')
+        # new work waits in her New tab until she presses Got it
+        await s.goto(BASE + '/#/tasks/new'); await s.wait_for_timeout(900)
+        await s.locator('.new-card:has-text("Exit interview summary") button:has-text("Got it")').click(); await s.wait_for_timeout(800)
+        await s.goto(BASE + '/#/tasks/list'); await s.wait_for_timeout(900)
         await s.locator('.task-row:has-text("Exit interview summary") .check').click(); await s.wait_for_timeout(800)
         await h.reload(); await h.wait_for_timeout(1500)
         if 'Finance' not in await h.locator('.dept-switch .switcher').inner_text():

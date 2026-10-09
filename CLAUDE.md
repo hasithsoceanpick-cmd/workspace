@@ -16,6 +16,7 @@ src/platform/files.ts  upload / open / delete files in the private "workspace-fi
 src/platform/excel.ts  plain Excel downloads (bold frozen header, real dates, no formulas) for any app.
 src/platform/pwa.ts, push.ts, public/sw.js  installing as an app, and phone alerts on this device.
 src/platform/Search.tsx  Ctrl+K search; each app adds a provider to SEARCH in slots.ts.
+src/platform/slots.ts also has TOP_BAR: small buttons an app puts in the top bar (Tasks: quick reminders).
 src/features/<key>/ department-only features. Registered in src/features/registry.ts.
 supabase/          numbered SQL files, run in order in the Supabase SQL Editor.
 supabase/functions/workspace-push/  the Edge Function that delivers phone alerts (pasted into the dashboard).
@@ -51,7 +52,7 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
    `has_feature(department_id, '<feature>')` for a department feature.
    Copy `supabase/templates/*.sql` — don't hand-roll policies.
 4. **Feature UI only appears through `useFeatures(app)`** and the slots in
-   `src/features/registry.ts` (`pages`, `dayReview`, `taskPanel`). Gate in both
+   `src/features/registry.ts` (`pages`, `dayReview`, `taskPanel`, `homePanel`). Gate in both
    places: the UI (feature list) AND the database (`has_feature`).
 5. **Don't edit shared app code to add a department-specific tweak.** If a feature
    needs a new place to plug in, add a *generic* slot to the registry (usable by any
@@ -68,8 +69,9 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
    leave as restrict so the admin can't delete someone who still has work. BEFORE UPDATE
    triggers that pin columns must let the database's own clean-up through
    (`if pg_trigger_depth() > 1 then return new; end if;`).
-9. **Changes to a live database** go in `supabase/updates/NNN_name.sql` (re-runnable), and the
-   same change goes into the numbered setup files so fresh installs match.
+9. **Changes to a live database** go into the numbered setup files, then build the next cumulative
+   `supabase/updates/NNN_name.sql` with `python3 tools/compose_update.py NNN_name "title"` (it includes every
+   earlier update, so Hasith only runs the newest). If you change a file that isn't in its PARTS list, add it.
 10. **SQL files must stay re-runnable** (`create table if not exists`,
    `create or replace function`, `drop policy if exists` before `create policy`).
 11. Run the database tests (tests/README.md) after any SQL change, and add a test
@@ -98,6 +100,8 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
 18. **Task status:** `review` means the owner finished and it waits for sign-off. Use `finished()` / `isLate()`
    from `src/apps/tasks/labels.ts` instead of comparing with `'done'`: finished-but-waiting work isn't late and
    isn't the owner's open workload. When the owner finished is `submitted_at` (falls back to `completed_at`).
+19. **"New" work:** a task someone else gave me that I haven't acknowledged (`inInbox(t)` in the Tasks store) appears
+   only in the New tab — leave it out of my lists, Today and calendar. Other people's views are unaffected.
 
 ## Adding a new app
 

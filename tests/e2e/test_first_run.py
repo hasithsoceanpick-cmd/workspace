@@ -27,7 +27,8 @@ async def main():
         await row.locator('select[aria-label="Department"]').select_option(label='Finance'); await h.wait_for_timeout(700)
         await row.locator('select[aria-label="Role"]').select_option('manager'); await h.wait_for_timeout(700)
         await h.goto(BASE + '/#/tasks'); await h.wait_for_timeout(1200)
-        check('Finance' in await h.locator('.dept-switch .switcher').inner_text() and await h.locator('h1:has-text("Today")').count() == 1, 'after placing self in Finance, admin lands on Today in Finance')
+        check('Finance' in await h.locator('.dept-switch .switcher').inner_text() and await h.locator('.tab.active:has-text("Home")').count() == 1,
+              'after placing self in Finance, the admin (a manager) lands on Home in Finance')
         await h.goto(BASE + '/#/tasks/list'); await h.wait_for_timeout(800)
         await h.fill('.qa-title', 'First task'); await h.press('.qa-title', 'Enter'); await h.wait_for_timeout(700)
         check(await h.locator('.task-row:has-text("First task")').count() == 1, 'admin can add a task')

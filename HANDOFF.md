@@ -4,7 +4,7 @@ Everything someone (a person or Claude in another account) needs to carry on wit
 this app without the original chat. Read this first, then `CLAUDE.md` (the rules for
 changing the code) and `README.md` (setup and admin guide).
 
-Last updated: 7 October 2026 (round 5).
+Last updated: 9 October 2026 (round 6).
 
 ---
 
@@ -56,6 +56,12 @@ as an app (PWA) and can send phone alerts (web push).
    Function (Verify JWT off), Admin → **Phone alerts** → Turn on → test, and tick **Compliance calendar**
    for Finance. Tested on copies of the post-U2 and post-U3 schema with older-app tables present: run twice,
    data kept, older app's tables/rules byte-for-byte unchanged.
+   **Update 5 (`005_reminders_home_escalation.sql`, U5)** was delivered on 9 Oct (round 6). It **includes U3 and
+   U4** (built with `tools/compose_update.py`), so it is the only one he needs to run, whatever he ran before.
+   To check it has run: `select to_regclass('public.task_reminders');` → not null. Tested on copies of the post-U2,
+   post-U3 and post-U4 schema (older-app tables present): run twice each, data kept, older app untouched, work
+   that was already 3+ days late flagged quietly (no flood of escalation alerts). It schedules the every-minute
+   reminders job `workspace-reminders` when pg_cron is on (it is, from step 4).
    Leave the old `notes` table (and any old `attachments` bucket) alone unless he decides otherwise.
 2. **Code on GitHub.** An earlier upload put 48 copies of files loose at the top level of the repo
    (folders flattened); the site kept building from the older `src/` folder. Those loose files are
@@ -194,6 +200,34 @@ trends**, **Search everything**.
 - **Search** (Ctrl+K / magnifier): `tasks_search` and `notes_search` (security invoker) with a provider list
   in `src/platform/slots.ts` (`SEARCH`); only finds what the person can already open.
 
+### Round 6 (9 Oct 2026)
+**Hasith:** "add reminder option. I need to be able to save quick reminders. also I think we added acknowledge option to
+the assigned tasks. So until tasks are acknowledged they need to appear in a separate tab! what else can you think of to
+improve the app". Answers: reminders **for me or my team**; unacknowledged work **only in a New tab**; extras chosen:
+**Manager home screen** (managers land on it), **Escalate long-overdue**, **Notes → tasks**, **Pin & follow tasks**. He did
+not pick the other ideas offered (recycle bin/backup, @mentions, templates, bulk actions, out-of-office cover, dependencies,
+email digest, audit request list, approval requests, Outlook calendar feed, workload warning, reconciliation tracker,
+working-day/Poya-aware deadlines, close calendar by working day, "waiting on" register, proof needed to finish,
+review points, time spent) — they remain options for later.
+- **Quick reminders**: `task_reminders` (02_app_tasks.sql). Personal: only the person reminded and whoever set it can see
+  it (not even managers). Leads can set them for whoever they could give work to (`can_assign_task`). Sent by
+  `task_reminders_due()` every minute (pg_cron job `workspace-reminders`; the app also calls it every minute while open)
+  as a `reminder` notification → bell + phone. Repeat daily / weekdays / weekly / monthly (moves to the next time, no
+  catch-up flood); snooze resets the sent mark. Top-bar clock button (platform slot `TOP_BAR`), page `#/tasks/reminders`,
+  "⏰ Remind" in a task. "Make it a task" turns one into a task.
+- **New tab**: `inInbox(t)` = given to me by someone else, not acknowledged, not finished. Shown only in `#/tasks/new`
+  (tab with a count + a banner elsewhere); left out of my list, Today and calendar. Got it / Got it for all.
+- **Home** (`#/tasks/home`, managers/seniors/admin; they land there once per app open; members land on Today): tiles
+  (sign-offs waiting, overdue, escalated, not opened, due in 7 days) and panels; features add panels via `homePanel`
+  (compliance next 30 days, month-end status).
+- **Escalation**: `tasks.escalated_at`; the daily check escalates work not finished 3+ days after its deadline, once per
+  deadline, to the department's managers + the owner + followers (`escalated`); a new deadline clears it. Red flag on
+  rows, board and calendar. Existing late work was flagged quietly when the column was added.
+- **Pin & follow**: `task_follows` (your own marks only). Followers get a task's alerts while they can still see it
+  (`task_follower_ids`, `task_visible_to`). Pinned group on top of My tasks; "Following" filter.
+- **Notes → tasks**: "→ Task" in the note toolbar turns the line (or selection) into a task for someone you could give
+  work to, links it (`notes_task_links`) and appends "→ Task #N" (an internal `#/tasks/list?task=N` link; Ctrl+click opens).
+
 ### Department-only features
 - **`month_end` — Month-end declaration (for Finance)**, "like the old app": master list of lines
   (code, category MEC/CMP/any, title, owner, due day of the following month); a senior or the manager
@@ -211,17 +245,19 @@ See `CLAUDE.md` for the full rules. In short:
 ```
 src/platform/   shell, login, app dropdown, admin department switcher, bell, Search (Ctrl+K), pwa.ts, push.ts,
                 notices.ts, files.ts, excel.ts, slots.ts, registry.ts
-src/apps/tasks/ Today, list, calendar, day review, who's on what, reports (week, trends); TaskDrawer, store, search.ts
+src/apps/tasks/ Home, Today, New, list, calendar, day review, who's on what, reports (week, trends), reminders;
+                TaskDrawer, store, search.ts, ReminderButton (top bar)
 src/apps/notes/ page tree, NotePage, TipTap Editor, ShareDialog, NoteFiles, LinkedTasks, LinkedNotesPanel, search.ts
 src/apps/admin/ People, Departments & apps, Phone alerts
 src/features/   department-only features (daily-notes, month-end, compliance)
 public/         manifest, icons, service worker (sw.js)
 supabase/       01–08 setup files, updates/NNN, functions/workspace-push (Edge Function), templates/,
                 00_reset.sql (wipes data!)
-tests/db/       database security tests (~330 checks)
+tests/db/       database security tests (368 checks)
 tests/e2e/      browser tests + a local stand-in for Supabase (incl. pg_net and fake phones)
 tests/push/     the Edge Function in real Deno (25 checks)
 tools/sql-page/ builds the copy-paste SQL page for Hasith
+tools/compose_update.py  builds the next cumulative update file from the numbered setup files
 ```
 
 Key technical points (all in `CLAUDE.md` too):
@@ -263,8 +299,8 @@ Key technical points (all in `CLAUDE.md` too):
 ## 7. Release checklist (how every change so far was shipped)
 
 1. Build the feature following `CLAUDE.md`.
-2. Database change → new re-runnable `supabase/updates/NNN_name.sql` **and** the same change in the
-   numbered setup files (fresh installs must match).
+2. Database change → into the numbered setup files, then `python3 tools/compose_update.py NNN_name "title"` builds the
+   cumulative `supabase/updates/NNN_name.sql` (includes all earlier updates; he runs only the newest).
 3. Run `tests/db/run.sh` and `tests/e2e/run.sh` against a throwaway local Postgres (never Supabase).
    Also test the update on a copy of the live schema: load the previous setup files + earlier
    updates, add some data, run the new update twice, check the data survived.
@@ -279,13 +315,14 @@ Key technical points (all in `CLAUDE.md` too):
 
 ## 8. Testing
 
-- `tests/db/run.sh` — 74 isolation + 89 feature + 49 round-4 + 111 round-5 checks (323) on a local Postgres
-  with a stand-in for Supabase's `auth`, `storage` and `pg_net`.
+- `tests/db/run.sh` — 74 isolation + 89 feature + 49 round-4 + 111 round-5 + 45 round-6 checks (368) on a local
+  Postgres with a stand-in for Supabase's `auth`, `storage` and `pg_net`.
 - `tests/push/run.sh` — the Edge Function in real Deno (from npm), checked against the reference decoder. 25 checks.
 - `tests/e2e/run.sh` — builds the app against `tests/e2e/mock-supabase.mjs` (auth, REST subset,
   storage with real RLS), seeds a Finance + HR demo (`*@demo.lk` / `password1`) and drives Chrome
-  through every feature. All 259 browser checks pass (incl. 69 for round 5: install, phone alerts end to end
-  with fake phones running the real sender code, sign-off, Got it, compliance, trends, search).
+  through every feature. All 304 browser checks pass (incl. 69 for round 5: install, phone alerts end to end
+  with fake phones running the real sender code, sign-off, Got it, compliance, trends, search; and 45 for round 6:
+  Home, New tab, reminders, escalation, pin & follow, notes → task, phone layout).
 - Local Postgres used during development: Postgres 16 on port 54322, user `postgres`.
 
 ## 9. Known limits and ideas not built

@@ -19,6 +19,11 @@ reminders, early reminders, repeating series, the Compliance calendar feature (i
 devices only your own, alerts batched to the Edge Function, gone devices forgotten, sending can never break the app).
 ~110 checks. `mock_supabase.sql` includes a small stand-in for `pg_net` that records the calls.
 
+`tests/db/round6.test.mjs` covers quick reminders (sent once at their time, snooze, repeat without catch-up, weekdays,
+for whom they may be set, private to the two people involved, about a visible task only), pin & follow (own marks only;
+followers get alerts only while they can see the task) and escalation (3 days, once, managers + owner + followers, cleared
+by a new deadline, HR stays HR). 45 checks.
+
 Run it against a **throwaway local Postgres** (never your live Supabase project):
 
 ```

@@ -14,4 +14,4 @@ for f in supabase/01_platform.sql supabase/02_app_tasks.sql supabase/03_feature_
   psql "$URL" -q -v ON_ERROR_STOP=1 -f "$f" > /dev/null
 done
 DATABASE_URL="$URL" node tests/db/isolation.test.mjs && DATABASE_URL="$URL" node tests/db/features.test.mjs \
-  && DATABASE_URL="$URL" node tests/db/round3.test.mjs && DATABASE_URL="$URL" node tests/db/round5.test.mjs
+  && DATABASE_URL="$URL" node tests/db/round3.test.mjs && DATABASE_URL="$URL" node tests/db/round5.test.mjs && DATABASE_URL="$URL" node tests/db/round6.test.mjs

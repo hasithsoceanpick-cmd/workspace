@@ -100,6 +100,8 @@ language sql immutable as $$
     when 'signed_off'  then 'Signed off'
     when 'sent_back'   then 'Sent back to you'
     when 'unseen'      then 'Not opened yet'
+    when 'reminder'    then 'Reminder'
+    when 'escalated'   then 'Escalated'
     when 'test'        then 'Phone alerts are working'
     else 'Workspace'
   end
