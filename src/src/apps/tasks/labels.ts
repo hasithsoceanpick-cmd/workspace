@@ -29,12 +29,16 @@ export const REMINDS: { value: number; label: string }[] = [
 export const remindLabel = (n: number | null | undefined) => n ? REMINDS.find(r => r.value === n)?.label ?? `${n} days before` : '';
 
 export const REPEATS: { value: Repeat; label: string; short: string }[] = [
+  { value: 'daily', label: 'Every day', short: 'Daily' },
+  { value: 'weekdays', label: 'Weekdays (Mon–Fri)', short: 'Weekdays' },
   { value: 'weekly', label: 'Every week', short: 'Weekly' },
   { value: 'monthly', label: 'Every month', short: 'Monthly' },
   { value: 'quarterly', label: 'Every 3 months', short: 'Quarterly' },
   { value: 'yearly', label: 'Every year', short: 'Yearly' },
 ];
 export const repeatLabel = (r: string | null | undefined) => REPEATS.find(x => x.value === r)?.short ?? '';
+/** Every day / weekdays: a new one appears each morning even if the last one is still open */
+export const isDaily = (r: string | null | undefined) => r === 'daily' || r === 'weekdays';
 
 export const PRIORITIES: { value: Priority; label: string }[] = [
   { value: 'high', label: 'High' },

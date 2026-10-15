@@ -3,9 +3,10 @@ import { useTaskApp } from './store';
 import type { Task } from './types';
 import { daysBetween, fmtDue, today } from '../../lib/dates';
 import { firstName } from '../../lib/labels';
-import { finished, isLate, repeatLabel, statusLabel } from './labels';
+import { finished, isDaily, isLate, repeatLabel, statusLabel } from './labels';
 import MovedBadge from './DueHistory';
 import Avatar from '../../platform/Avatar';
+import AssignedBy from './AssignedBy';
 
 export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
   const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf, marks } = useTaskApp();
@@ -18,7 +19,6 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
   const isNew = !t.acknowledged_at && t.assignee_id === me.id;
   const unseen = !t.acknowledged_at && t.assignee_id !== me.id && t.created_by === me.id;
   const who = person(t.assignee_id);
-  const by = person(t.created_by);
 
   async function toggle(e: MouseEvent) {
     e.stopPropagation();
@@ -40,6 +40,7 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
         <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
       </button>
       <div className="tr-main">
+        <AssignedBy t={t} />
         <div className="tr-title">{t.title}</div>
         <div className="tr-meta">
           {marks(t.id).pinned && <span className="pin-star" title="Pinned">★</span>}
@@ -50,12 +51,9 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
           {t.priority === 'high' && <span className="pill high">High</span>}
           {(t.status === 'doing' || t.status === 'waiting') && <span className={`pill s-${t.status}`}>{statusLabel(t.status)}</span>}
           {t.priority === 'low' && <span className="pill low">Low</span>}
-          {t.created_by && t.created_by !== t.assignee_id && t.created_by !== me.id && by && (
-            <span className="muted">from {firstName(by.full_name)}</span>
-          )}
           {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`} title="Checklist">☑ {prog.done}/{prog.total}</span>}
           {helping && <span className="pill helping">Helping</span>}
-          {t.repeat && <span className="pill repeat" title="Repeats: the next one is created when this is done">⟳ {repeatLabel(t.repeat)}</span>}
+          {t.repeat && <span className="pill repeat" title={isDaily(t.repeat) ? 'Repeats: a new one appears each morning' : 'Repeats: the next one is created when this is done'}>⟳ {repeatLabel(t.repeat)}</span>}
           <MovedBadge task={t} />
           {t.notes && <span className="muted" title="Has notes">≡</span>}
         </div>

@@ -1,6 +1,6 @@
 export type Status = 'todo' | 'doing' | 'waiting' | 'review' | 'done';
 export type Priority = 'low' | 'normal' | 'high';
-export type Repeat = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 export interface Task {
   id: number;
@@ -129,6 +129,17 @@ export interface TaskAttachment {
   size: number | null;
   mime: string | null;
   created_by: string | null;
+  created_at: string;
+}
+
+/** A quick to-do for one day on the Today page — private to whoever wrote it */
+export interface MiniTask {
+  id: number;
+  department_id: string;
+  user_id: string;
+  day: string;        // YYYY-MM-DD
+  body: string;
+  done_at: string | null;
   created_at: string;
 }
 

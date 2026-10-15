@@ -6,7 +6,7 @@ import { firstName } from '../../lib/labels';
 import { downloadXlsx, xDate } from '../../platform/excel';
 import Avatar from '../../platform/Avatar';
 import { useTaskApp } from '../../apps/tasks/store';
-import { finished, finishedAt, REMINDS, REPEATS, remindLabel, repeatLabel, statusLabel } from '../../apps/tasks/labels';
+import { finished, finishedAt, isDaily, REMINDS, REPEATS, remindLabel, repeatLabel, statusLabel } from '../../apps/tasks/labels';
 import type { Repeat, Task } from '../../apps/tasks/types';
 
 interface Item {
@@ -23,6 +23,8 @@ const SUGGESTIONS = [
 
 /** Same rule as the database: anchor + n × step, month ends kept (31 Jan → 28 Feb → 31 Mar). */
 export function scheduleDate(anchor: string, repeat: Repeat, n: number): string {
+  if (repeat === 'daily') return addDays(anchor, n);
+  if (repeat === 'weekdays') { let d = anchor; for (let i = 0; i < n; i++) { d = addDays(d, 1); while ([0, 6].includes(fromISO(d).getDay())) d = addDays(d, 1); } return d; }
   if (repeat === 'weekly') return addDays(anchor, 7 * n);
   const months = (repeat === 'monthly' ? 1 : repeat === 'quarterly' ? 3 : 12) * n;
   const a = fromISO(anchor);
@@ -102,7 +104,7 @@ export default function CompliancePage({ params }: { params: Params }) {
       const prev = bySeries.get(t.series_id);
       if (!prev || prev.due_date < t.due_date) bySeries.set(t.series_id, t);
     }
-    return [...bySeries.values()].filter(t => t.repeat).sort((a, b) => a.title.localeCompare(b.title));
+    return [...bySeries.values()].filter(t => t.repeat && !isDaily(t.repeat)).sort((a, b) => a.title.localeCompare(b.title));
   }, [items, tasks]);
 
   async function exportSheet() {
@@ -309,7 +311,7 @@ function AddForm({ deptId, team, linkable, onDone }: {
         <label className="field">
           <span>Repeats</span>
           <select value={f.repeat} onChange={e => setF({ ...f, repeat: e.target.value as Repeat })}>
-            {REPEATS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            {REPEATS.filter(r => !isDaily(r.value)).map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </label>
         <label className="field">

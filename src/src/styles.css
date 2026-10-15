@@ -557,7 +557,7 @@ kbd { display: inline-block; padding: 0 5px; border: 1px solid var(--border-stro
 .plan-item.planned { background: var(--surface-2); }
 .grip { color: var(--faint); font-size: 11px; letter-spacing: -2px; user-select: none; padding: 0 2px; }
 .plan-title { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 0; background: none; padding: 0; cursor: pointer; text-align: left; }
-.plan-title > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; font-size: 13px; }
+.plan-title > .pt-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; font-size: 13px; }
 .plan-add { width: 28px; padding: 0 !important; font-size: 16px; }
 
 .timeline-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); max-height: calc(100vh - 210px); min-height: 420px; overflow-y: auto; }
@@ -687,7 +687,7 @@ kbd { display: inline-block; padding: 0 5px; border: 1px solid var(--border-stro
 
 @media (max-width: 900px) {
   .today-grid { grid-template-columns: 1fr; }
-  .plan-list { position: static; max-height: 260px; }
+  .plan-list { position: static; max-height: none; }
 }
 @media (max-width: 760px) {
   .notes-app { grid-template-columns: 1fr; }
@@ -981,3 +981,35 @@ kbd { display: inline-block; padding: 0 5px; border: 1px solid var(--border-stro
   .topbar .icon-btn { width: 32px; }
   .switcher { max-width: 112px; }
 }
+
+/* Round 7: mini tasks on Today, "Assigned by" on task cards */
+.assigned-by { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; margin-bottom: 2px; font-size: 11.5px; line-height: 1.3; color: var(--muted); }
+.assigned-by .ab-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assigned-by strong { color: var(--text); font-weight: 600; }
+.assigned-by.big { margin: 0 0 10px; padding: 7px 10px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; }
+.bcard .assigned-by { margin-bottom: 4px; }
+.minis { margin-bottom: 10px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.mini-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.mini-list { list-style: none; margin: 0; padding: 0; }
+.mini { display: flex; align-items: center; gap: 6px; padding: 3px 2px; border-radius: 6px; }
+.mini:hover { background: var(--surface-2); }
+.mini .check { width: 18px; height: 18px; }
+.mini-text { flex: 1; min-width: 0; padding: 2px 0; border: 0; background: none; color: var(--text); font-size: 13.5px; text-align: left; cursor: text; overflow-wrap: anywhere; }
+.mini.done .mini-text { color: var(--muted); text-decoration: line-through; }
+.mini-edit { flex: 1; min-width: 0; height: 26px; padding: 2px 6px; font-size: 13.5px; }
+.mini-act { flex: none; padding: 2px 5px; border: 0; border-radius: 5px; background: none; color: var(--muted); font-size: 11.5px; cursor: pointer; opacity: 0; }
+.mini:hover .mini-act, .mini:focus-within .mini-act { opacity: 1; }
+@media (hover: none) { .mini-act { opacity: 1; } }
+.mini-act:hover { background: var(--surface); color: var(--accent); }
+.mini-act.x:hover { color: var(--danger); }
+.mini-add { width: 100%; height: 32px; margin-top: 6px; font-size: 13.5px; }
+.mini-left { margin-bottom: 12px; padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--warn) 7%, var(--surface)); }
+.mini-left ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.mini-left-item { padding: 6px 0; border-top: 1px solid var(--border); }
+.mini-left-text { display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; overflow-wrap: anywhere; }
+.mini-left-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.mini-left-acts .btn.sm { height: 26px; padding: 0 9px; font-size: 12px; }
+.mini-left-acts .mini-del { color: var(--danger); }
+.late-toggle { display: flex; align-items: center; gap: 4px; width: 100%; padding: 6px 0; border: 0; background: none; color: var(--text); font-size: 12px; font-weight: 600; cursor: pointer; }
+.late-toggle .tiny { margin-left: auto; font-weight: 400; }
+.plan-more { width: 100%; margin-top: 10px; height: 32px; font-size: 13px; color: var(--muted); }
