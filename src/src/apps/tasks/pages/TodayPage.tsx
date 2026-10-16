@@ -30,7 +30,7 @@ const prioRank = { high: 0, normal: 1, low: 2 } as const;
 type Drag = { id: number; mode: 'move' | 'resize'; offset: number; x: number; y: number; moved: boolean };
 
 export default function TodayPage({ params }: { params: Params }) {
-  const { me, inDept, isLead, team, tasks, person, openTask, helpersOf, fail, dept, inInbox } = useTaskApp();
+  const { me, inDept, isLead, team, tasks, person, openTask, helpersOf, fail, dept, inInbox, updateDue } = useTaskApp();
   const td = today();
   const d = params.d || td;
   const who = isLead && params.who && team.some(p => p.id === params.who) ? params.who
@@ -243,6 +243,7 @@ export default function TodayPage({ params }: { params: Params }) {
           <span className="muted tiny">
             {fmtDue(t.due_date)}{t.due_date < td && ` · ${daysBetween(t.due_date, td)}d late`}
             {t.repeat && <> · ⟳ {repeatLabel(t.repeat)}</>}
+            {d === td && updateDue(t) && <> · <span className="warn-text">update due</span></>}
             {helping && <> · helping {firstName(person(t.assignee_id)?.full_name ?? '')}</>}
             {at !== undefined && <> · <span className="accent">⏱ {hm(at)}</span></>}
           </span>

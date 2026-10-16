@@ -4,6 +4,7 @@ import { usePlatform } from '../../platform/store';
 import { removeFiles } from '../../platform/files';
 import type { Profile } from '../../platform/types';
 import type { Task, TaskDraft, TaskFollow, TaskHelper } from './types';
+import { isWeekday, prevWorkday, today } from '../../lib/dates';
 
 type DrawerState = { mode: 'edit'; id: number } | { mode: 'new'; defaults: Partial<TaskDraft> } | null;
 
@@ -45,6 +46,12 @@ interface TasksStore {
   /** my pin / follow marks */
   marks: (taskId: number) => { pinned: boolean; following: boolean };
   setMark: (taskId: number, patch: { pinned?: boolean; following?: boolean }) => Promise<void>;
+  /** Daily updates: has one been written for this task for that day (today or the last weekday)? */
+  updatePosted: (taskId: number, day: string) => boolean;
+  /** Needs today's daily update and hasn't got one yet */
+  updateDue: (t: Task) => boolean;
+  /** the owner writes a Daily update (for today, or the last weekday) */
+  postUpdate: (taskId: number, body: string, day?: string) => Promise<boolean>;
   /** checklist progress per task id */
   progressOf: (taskId: number) => { done: number; total: number } | null;
   refreshChecklist: () => Promise<void>;
@@ -69,6 +76,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const [helpers, setHelpers] = useState<TaskHelper[]>([]);
   const [steps, setSteps] = useState<{ task_id: number; done: boolean }[]>([]);
   const [follows, setFollows] = useState<TaskFollow[]>([]);
+  const [posted, setPosted] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
 
@@ -84,15 +92,17 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   }, [deptId]);
 
   const refresh = useCallback(async () => {
-    const [t, h, f] = await Promise.all([
+    const [t, h, f, u] = await Promise.all([
       supabase.from('tasks').select('*').eq('department_id', deptId).order('due_date').order('id'),
       supabase.from('task_helpers').select('*').eq('department_id', deptId),
       supabase.from('task_follows').select('*').eq('user_id', me.id),
+      supabase.from('task_comments').select('task_id,daily_for').gte('daily_for', prevWorkday(today())),
     ]);
     if (t.error) return fail(t.error);
     setTasks(t.data as Task[]);
     if (h.data) setHelpers(h.data as TaskHelper[]);
     if (f.data) setFollows(f.data as TaskFollow[]);
+    if (u.data) setPosted(new Set((u.data as { task_id: number; daily_for: string }[]).map(x => `${x.task_id}:${x.daily_for}`)));
     setLoaded(true);
     refreshChecklist();
   }, [deptId, fail, refreshChecklist, me.id]);
@@ -259,11 +269,26 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return true;
   }, [tasks, canDelete, fail, toast]);
 
+  const updatePosted = useCallback((id: number, day: string) => posted.has(`${id}:${day}`), [posted]);
+  const updateDue = useCallback((t: Task) => {
+    const td = today();
+    return t.daily_update && !!t.daily_update_from && t.daily_update_from <= td && isWeekday(td)
+      && t.status !== 'done' && t.status !== 'review' && !posted.has(`${t.id}:${td}`);
+  }, [posted]);
+  const postUpdate = useCallback(async (taskId: number, body: string, day = today()) => {
+    const { error } = await supabase.from('task_comments').insert({ task_id: taskId, body: body.trim(), daily_for: day });
+    if (error) { fail(error); return false; }
+    setPosted(p => new Set(p).add(`${taskId}:${day}`));
+    refreshNotices();
+    return true;
+  }, [fail, refreshNotices]);
+
   const value: TasksStore = {
     inDept, fullView, isLead, team, canAssignTo, tasks, loaded, refresh,
     createTask, updateTask, deleteTask, canDelete,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper,
     progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack, inInbox, inbox, marks, setMark,
+    updatePosted, updateDue, postUpdate,
     drawer,
     openTask: (id) => setDrawer({ mode: 'edit', id }),
     newTask: (defaults = {}) => setDrawer({ mode: 'new', defaults }),

@@ -131,3 +131,12 @@ export function dayBounds(iso: string): [string, string] {
 }
 
 export const localDayOf = (ts: string) => toISO(new Date(ts));
+
+/** Monday to Friday */
+export const isWeekday = (iso: string) => { const w = fromISO(iso).getDay(); return w !== 0 && w !== 6; };
+/** The last weekday before this day: Monday, Saturday and Sunday → Friday (same rule as the database) */
+export function prevWorkday(iso: string): string {
+  let d = addDays(iso, -1);
+  while (!isWeekday(d)) d = addDays(d, -1);
+  return d;
+}

@@ -121,10 +121,10 @@ export default function DayPage({ params }: { params: Params }) {
                           {forOther && a.kind === 'created' && (
                             <span className="muted"> → {firstName(nameOf(t!.assignee_id))}</span>
                           )}
-                          {forOther && a.kind !== 'created' && a.kind !== 'comment' && (
+                          {forOther && a.kind !== 'created' && a.kind !== 'comment' && a.kind !== 'daily_update' && (
                             <span className="muted tiny"> ({firstName(nameOf(t!.assignee_id))}'s)</span>
                           )}
-                          {x.detail && <div className="detail">{a.kind === 'comment' ? `“${x.detail}”` : x.detail}</div>}
+                          {x.detail && <div className="detail">{a.kind === 'comment' || a.kind === 'daily_update' ? `“${x.detail}”` : x.detail}</div>}
                         </li>
                       );
                     })}
