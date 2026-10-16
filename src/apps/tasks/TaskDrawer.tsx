@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Clipboa
 import { useTaskApp } from './store';
 import { supabase } from '../../supabase';
 import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
-import { PRIORITIES, REMINDS, REPEATS, STATUSES, isLate } from './labels';
+import { PRIORITIES, REMINDS, REPEATS, STATUSES, isDaily, isLate } from './labels';
+import AssignedBy from './AssignedBy';
 import { DueMovesList } from './DueHistory';
 import { firstName } from '../../lib/labels';
 import { daysBetween, fmtDay, fmtDue, fmtStamp, today } from '../../lib/dates';
@@ -246,6 +247,7 @@ export default function TaskDrawer() {
           </>
         );
       })()}>
+      {task && <AssignedBy t={task} big />}
       {task && reminding && (
         <div className="drawer-remind"><ReminderForm taskId={task.id} defaultText={task.title} onSaved={() => setReminding(false)} /></div>
       )}
@@ -352,18 +354,24 @@ export default function TaskDrawer() {
       <div className="fields">
         <label className="field">
           <span>Repeat</span>
-          <select value={form.repeat ?? ''} onChange={e => set('repeat', (e.target.value || null) as TaskDraft['repeat'])} disabled={readOnly}>
+          <select value={form.repeat ?? ''} disabled={readOnly} aria-label="Repeat"
+            onChange={e => {
+              const r = (e.target.value || null) as TaskDraft['repeat'];
+              setForm(f => ({ ...f, repeat: r, remind_days: isDaily(r) ? null : f.remind_days }));
+            }}>
             <option value="">Doesn't repeat</option>
             {REPEATS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
         </label>
-        <label className="field">
-          <span>Early reminder</span>
-          <select value={form.remind_days ?? ''} onChange={e => set('remind_days', e.target.value ? Number(e.target.value) : null)} disabled={readOnly}>
-            <option value="">None</option>
-            {REMINDS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </label>
+        {!isDaily(form.repeat) && (
+          <label className="field">
+            <span>Early reminder</span>
+            <select value={form.remind_days ?? ''} onChange={e => set('remind_days', e.target.value ? Number(e.target.value) : null)} disabled={readOnly}>
+              <option value="">None</option>
+              {REMINDS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+          </label>
+        )}
         {givenToOther && (
           <label className="field">
             <span>Sign-off</span>
@@ -375,7 +383,11 @@ export default function TaskDrawer() {
           </label>
         )}
       </div>
-      {form.repeat && <div className="field-note">When this is {givenToOther && form.needs_check ? 'signed off' : 'marked done'}, the next one is created automatically, with the same owner, helpers and checklist.</div>}
+      {form.repeat && (isDaily(form.repeat) ? (
+        <div className="field-note">A new one appears every {form.repeat === 'weekdays' ? 'weekday (Monday to Friday)' : 'day'} morning, with the same owner, helpers and checklist — even if the last one isn't finished, so a missed day stays overdue. To stop it, set this back to "Doesn't repeat".</div>
+      ) : (
+        <div className="field-note">When this is {givenToOther && form.needs_check ? 'signed off' : 'marked done'}, the next one is created automatically, with the same owner, helpers and checklist.</div>
+      ))}
 
       {task && task.due_moves > 0 && (
         <div className="due-history">
@@ -434,7 +446,7 @@ export default function TaskDrawer() {
             </div>
           )}
           <div className="meta">
-            Assigned by {creator ? creator.full_name : 'unknown'} · created {fmtStamp(task!.created_at)}
+            {task!.created_by && task!.created_by !== task!.assignee_id ? 'Given' : `Added by ${creator ? creator.full_name : 'unknown'}`} {fmtStamp(task!.created_at)}
             {task!.created_by !== task!.assignee_id && (
               task!.acknowledged_at
                 ? <> · opened by {firstName(nameOf(task!.assignee_id))} {fmtStamp(task!.acknowledged_at)}</>

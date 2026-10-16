@@ -6,6 +6,7 @@ import { firstName, roleLabel } from '../../../lib/labels';
 import Avatar from '../../../platform/Avatar';
 import type { Task } from '../types';
 import { repeatLabel, statusLabel } from '../labels';
+import AssignedBy from '../AssignedBy';
 import MovedBadge from '../DueHistory';
 import { finished, finishedAt } from '../labels';
 
@@ -98,6 +99,7 @@ function Board({ params }: { params: Params }) {
         onDragStart={e => { e.dataTransfer.setData('text/x-board', String(t.id)); e.dataTransfer.effectAllowed = 'move'; }}
         onClick={() => openTask(t.id)} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter') openTask(t.id); }}>
+        <AssignedBy t={t} />
         <div className="bcard-title">{t.title}</div>
         <div className="bcard-meta">
           <span className={late ? 'danger strong' : 'muted'}>

@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { useTaskApp } from '../store';
 import { supabase } from '../../../supabase';
 import { setParams, type Params } from '../../../lib/route';
-import { addDays, daysBetween, fmtDue, fmtLong, today } from '../../../lib/dates';
+import { addDays, daysBetween, fmtDay, fmtDue, fmtLong, today } from '../../../lib/dates';
 import { firstName } from '../../../lib/labels';
 import type { Task, TimeBlock } from '../types';
-import { finished } from '../labels';
+import { finished, repeatLabel } from '../labels';
 import Avatar from '../../../platform/Avatar';
+import AssignedBy from '../AssignedBy';
+import MiniTasks from '../MiniTasks';
 
 // Timeline runs 07:00 – 20:30, in 30-minute rows, snapping to 15 minutes.
 const START = 7 * 60;
@@ -70,24 +72,24 @@ export default function TodayPage({ params }: { params: Params }) {
 
   const taskById = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks]);
 
-  // Work this person can plan: their own open tasks and tasks they help on
-  const planList = useMemo(() => {
-    const open = tasks.filter(t => !finished(t) && !inInbox(t) && (t.assignee_id === who || helpersOf(t.id).includes(who)))
-      .sort((a, b) => a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id);
-    const groups = [
-      { label: 'Overdue', tone: 'danger', items: open.filter(t => t.due_date < d) },
-      { label: d === td ? 'Due today' : 'Due this day', tone: 'accent', items: open.filter(t => t.due_date === d) },
-      { label: 'Next 7 days', tone: '', items: open.filter(t => t.due_date > d && t.due_date <= addDays(d, 7)) },
-      { label: 'Later', tone: '', items: open.filter(t => t.due_date > addDays(d, 7)) },
-    ];
-    return groups.filter(g => g.items.length);
-  }, [tasks, who, helpersOf, d, td, inInbox]);
-
   const plannedAt = useMemo(() => {
     const m = new Map<number, number>();
     for (const b of blocks ?? []) if (b.task_id && !m.has(b.task_id)) m.set(b.task_id, b.start_min);
     return m;
   }, [blocks]);
+
+  // Only this day's work: due this day, planned on this day's timeline, and (folded away) anything overdue
+  const [showLate, setShowLate] = useState(false);
+  const { dueList, plannedList, lateList, laterList } = useMemo(() => {
+    const open = tasks.filter(t => !finished(t) && !inInbox(t) && (t.assignee_id === who || helpersOf(t.id).includes(who)))
+      .sort((a, b) => a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id);
+    const dueList = open.filter(t => t.due_date === d);
+    const plannedList = open.filter(t => t.due_date !== d && plannedAt.has(t.id))
+      .sort((a, b) => plannedAt.get(a.id)! - plannedAt.get(b.id)!);
+    const lateList = open.filter(t => t.due_date < d && !plannedAt.has(t.id));
+    const laterList = open.filter(t => t.due_date > d && !plannedAt.has(t.id));   // not shown; can be pulled into the day
+    return { dueList, plannedList, lateList, laterList };
+  }, [tasks, who, helpersOf, d, inInbox, plannedAt]);
 
   // side-by-side columns for blocks that overlap
   const layout = useMemo(() => {
@@ -226,6 +228,32 @@ export default function TodayPage({ params }: { params: Params }) {
     await insert({ title, start_min: draft.start, end_min: Math.min(END, draft.start + OWN_LEN) });
   }
 
+  const planItem = (t: Task) => {
+    const at = plannedAt.get(t.id);
+    const helping = t.assignee_id !== who;
+    return (
+      <div key={t.id} className={`plan-item ${t.priority === 'high' ? 'high' : ''} ${at !== undefined ? 'planned' : ''}`}
+        draggable={mine}
+        onDragStart={e => { e.dataTransfer.setData('text/x-task', String(t.id)); e.dataTransfer.effectAllowed = 'copy'; }}
+        onDragEnd={() => setHover(null)}>
+        {mine && <span className="grip" aria-hidden="true">⋮⋮</span>}
+        <button className="plan-title" onClick={() => openTask(t.id)}>
+          <AssignedBy t={t} />
+          <span className="pt-title">{t.title}</span>
+          <span className="muted tiny">
+            {fmtDue(t.due_date)}{t.due_date < td && ` · ${daysBetween(t.due_date, td)}d late`}
+            {t.repeat && <> · ⟳ {repeatLabel(t.repeat)}</>}
+            {helping && <> · helping {firstName(person(t.assignee_id)?.full_name ?? '')}</>}
+            {at !== undefined && <> · <span className="accent">⏱ {hm(at)}</span></>}
+          </span>
+        </button>
+        {mine && (
+          <button className="btn sm plan-add" onClick={() => placeTask(t, nextFree())} title="Add to the next free hour" aria-label={`Plan ${t.title}`}>+</button>
+        )}
+      </div>
+    );
+  };
+
   const nowMin = now.getHours() * 60 + now.getMinutes();
   const showNow = d === td && nowMin >= START && nowMin <= END;
   const rows = Array.from({ length: (END - START) / ROW }, (_, i) => START + i * ROW);
@@ -263,38 +291,41 @@ export default function TodayPage({ params }: { params: Params }) {
 
       <div className="today-grid">
         <aside className="plan-list">
+          {mine && <MiniTasks day={d} />}
           <div className="plan-head">
-            <span className="section-title">{mine ? 'Drag work into your day' : 'Open work'}</span>
+            <span className="section-title">{mine ? 'Drag work into your day' : 'Work for this day'}</span>
           </div>
-          {planList.length === 0 && <div className="muted small pad">No open tasks.</div>}
-          {planList.map(g => (
-            <section key={g.label} className="plan-group">
-              <h3 className={g.tone}>{g.label} <span className="count">{g.items.length}</span></h3>
-              {g.items.map(t => {
-                const at = plannedAt.get(t.id);
-                const helping = t.assignee_id !== who;
-                return (
-                  <div key={t.id} className={`plan-item ${t.priority === 'high' ? 'high' : ''} ${at !== undefined ? 'planned' : ''}`}
-                    draggable={mine}
-                    onDragStart={e => { e.dataTransfer.setData('text/x-task', String(t.id)); e.dataTransfer.effectAllowed = 'copy'; }}
-                    onDragEnd={() => setHover(null)}>
-                    {mine && <span className="grip" aria-hidden="true">⋮⋮</span>}
-                    <button className="plan-title" onClick={() => openTask(t.id)}>
-                      <span>{t.title}</span>
-                      <span className="muted tiny">
-                        {fmtDue(t.due_date)}
-                        {helping && <> · helping {firstName(person(t.assignee_id)?.full_name ?? '')}</>}
-                        {at !== undefined && <> · <span className="accent">⏱ {hm(at)}</span></>}
-                      </span>
-                    </button>
-                    {mine && (
-                      <button className="btn sm plan-add" onClick={() => placeTask(t, nextFree())} title="Add to the next free hour" aria-label={`Plan ${t.title}`}>+</button>
-                    )}
-                  </div>
-                );
-              })}
+          {dueList.length === 0 && plannedList.length === 0 && (
+            <div className="muted small pad">{d === td ? 'Nothing due today.' : 'Nothing due this day.'}</div>
+          )}
+          {dueList.length > 0 && (
+            <section className="plan-group">
+              <h3 className="accent">{d === td ? 'Due today' : 'Due this day'} <span className="count">{dueList.length}</span></h3>
+              {dueList.map(planItem)}
             </section>
-          ))}
+          )}
+          {plannedList.length > 0 && (
+            <section className="plan-group">
+              <h3>{d === td ? 'Planned for today' : 'Planned for this day'} <span className="count">{plannedList.length}</span></h3>
+              {plannedList.map(planItem)}
+            </section>
+          )}
+          {lateList.length > 0 && (
+            <section className="plan-group late-fold">
+              <button className="late-toggle" onClick={() => setShowLate(v => !v)} aria-expanded={showLate}>
+                <span className="danger">Overdue</span> <span className="count">{lateList.length}</span>
+                <span className="muted tiny">{showLate ? 'hide' : 'show'}</span>
+              </button>
+              {showLate && lateList.map(planItem)}
+            </section>
+          )}
+          {mine && laterList.length > 0 && (
+            <select className="plan-more" value="" aria-label="Plan another task"
+              onChange={e => { const t = taskById.get(Number(e.target.value)); if (t) placeTask(t, nextFree()); }}>
+              <option value="">+ Plan a task due later…</option>
+              {laterList.map(t => <option key={t.id} value={t.id}>{t.title} — due {fmtDay(t.due_date)}</option>)}
+            </select>
+          )}
         </aside>
 
         <div className="timeline-wrap" ref={scroller}>
@@ -364,7 +395,7 @@ export default function TodayPage({ params }: { params: Params }) {
         </div>
       </div>
       {mine && (
-        <p className="hint">Drag tasks onto the timeline (or press +) · click an empty slot to add your own block · drag a block to move it, its bottom edge to resize · double-click your own block to rename.</p>
+        <p className="hint">Mini tasks are just for you — tick them off, or make one a real task · drag tasks onto the timeline (or press +) · click an empty slot to add your own block · drag a block to move it, its bottom edge to resize · double-click your own block to rename.</p>
       )}
     </div>
   );
