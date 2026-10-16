@@ -16,7 +16,10 @@ export function useOpenNotice() {
     if (!n.app_key) return;
     const app = APPS.find(a => a.key === n.app_key);
     const ref = app?.refParam;
-    const params: Record<string, string> = ref && n.ref_id && n.kind !== 'due_today' ? { [ref]: String(n.ref_id) } : {};
+    const params: Record<string, string> = {
+      ...(ref && n.ref_id && n.kind !== 'due_today' ? { [ref]: String(n.ref_id) } : {}),
+      ...(app?.noticeParams?.(n) ?? {}),
+    };
     // some alerts open a page instead of an item: the app's own pages, or a department feature's page
     const feature = FEATURES.find(f => f.app === n.app_key && f.noticeKinds?.includes(n.kind) && f.pages?.length);
     const page = app?.kindPages?.[n.kind] ?? (feature ? `x-${feature.pages![0].id}` : '');

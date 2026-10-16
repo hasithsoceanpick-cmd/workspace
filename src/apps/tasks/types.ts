@@ -38,6 +38,10 @@ export interface Task {
   remind_days: number | null;
   /** still not finished 3 days after the deadline: the managers were told (cleared when the deadline moves) */
   escalated_at: string | null;
+  /** the owner writes a short "Daily update" every weekday while it's open */
+  daily_update: boolean;
+  /** first weekday an update is needed (set by the database) */
+  daily_update_from: string | null;
 }
 
 /** My pin / follow marks on a task */
@@ -70,6 +74,18 @@ export interface TaskComment {
   author_id: string;
   body: string;
   created_at: string;
+  /** set on a Daily update: the weekday it's for */
+  daily_for: string | null;
+}
+
+/** A line of work done outside the app, on the My output page */
+export interface WorkLog {
+  id: number;
+  department_id: string;
+  user_id: string;
+  day: string;
+  body: string;
+  created_at: string;
 }
 
 export interface TaskActivity {
@@ -78,7 +94,7 @@ export interface TaskActivity {
   department_id: string;
   actor_id: string | null;
   kind: 'created' | 'status' | 'due_date' | 'assignee' | 'edited' | 'comment' | 'helper_added' | 'helper_removed' | 'step' | 'repeated'
-    | 'sent_back' | 'acknowledged';
+    | 'sent_back' | 'acknowledged' | 'daily_update';
   old_value: string | null;
   new_value: string | null;
   created_at: string;
@@ -95,6 +111,7 @@ export interface TaskDraft {
   needs_check?: boolean;
   remind_days?: number | null;
   acknowledged_at?: string | null;
+  daily_update?: boolean;
 }
 
 export interface TaskHelper {

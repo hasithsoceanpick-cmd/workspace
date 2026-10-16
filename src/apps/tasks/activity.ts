@@ -38,6 +38,8 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
       return { verb: 'sent it back', detail: a.new_value ?? undefined, tone: 'warn' };
     case 'acknowledged':
       return { verb: 'opened it (Got it)' };
+    case 'daily_update':
+      return { verb: a.old_value ? `posted the daily update for ${fmtDay(a.old_value)}` : 'posted a daily update', detail: a.new_value ?? undefined, tone: 'good' };
     case 'step':
       return a.old_value === 'done'
         ? { verb: 'ticked a step', detail: a.new_value ?? undefined, tone: 'good' }

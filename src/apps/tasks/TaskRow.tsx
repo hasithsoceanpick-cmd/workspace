@@ -9,7 +9,7 @@ import Avatar from '../../platform/Avatar';
 import AssignedBy from './AssignedBy';
 
 export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
-  const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf, marks } = useTaskApp();
+  const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf, marks, updateDue, updatePosted } = useTaskApp();
   const helping = helperOnly(t);
   const helpers = helpersOf(t.id);
   const prog = progressOf(t.id);
@@ -53,6 +53,9 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
           {t.priority === 'low' && <span className="pill low">Low</span>}
           {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`} title="Checklist">☑ {prog.done}/{prog.total}</span>}
           {helping && <span className="pill helping">Helping</span>}
+          {t.daily_update && !finished(t) && (updateDue(t)
+            ? <span className="pill update-due" title={t.assignee_id === me.id ? "Write today's daily update in the task" : "Today's daily update isn't in yet"}>Update due</span>
+            : <span className="pill daily-pill" title="Needs a short daily update every weekday">{updatePosted(t.id, today()) ? '✓ Updated today' : 'Daily update'}</span>)}
           {t.repeat && <span className="pill repeat" title={isDaily(t.repeat) ? 'Repeats: a new one appears each morning' : 'Repeats: the next one is created when this is done'}>⟳ {repeatLabel(t.repeat)}</span>}
           <MovedBadge task={t} />
           {t.notes && <span className="muted" title="Has notes">≡</span>}

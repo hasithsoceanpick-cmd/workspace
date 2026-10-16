@@ -11,7 +11,7 @@ import Dropdown from './Dropdown';
 import Bell from './Bell';
 import UserMenu from './UserMenu';
 import Search from './Search';
-import { TOP_BAR } from './slots';
+import { GATES, TOP_BAR } from './slots';
 
 export default function Shell() {
   const { isAdmin, dept, departments, setDeptId, myAppKeys, apps, profiles, toasts } = usePlatform();
@@ -133,6 +133,8 @@ export default function Shell() {
           </div>
         </main>
       )}
+
+      {GATES.map(g => <g.component key={g.app} />)}
 
       <div className="toasts">
         {toasts.map(t => <div key={t.id} className={`toast ${t.kind}`}>{t.text}</div>)}

@@ -14,6 +14,7 @@ import TrendsPage from './pages/TrendsPage';
 import HomePage from './pages/HomePage';
 import NewPage from './pages/NewPage';
 import RemindersPage from './pages/RemindersPage';
+import OutputPage from './pages/OutputPage';
 
 // managers and senior executives land on Home the first time the app opens (Today is one tab away)
 let landed = false;
@@ -58,6 +59,7 @@ function TasksInner({ page, params }: AppProps) {
     { id: 'list', label: 'Tasks', show: true },
     { id: 'calendar', label: 'Calendar', show: true },
     { id: 'day', label: 'Day review', show: true },
+    { id: 'output', label: 'My output', show: true },
     { id: 'team', label: "Who's on what", show: isLead },
     { id: 'week', label: 'Reports', show: isLead },
     ...featurePages.map(p => ({ id: `x-${p.id}`, label: p.label, show: true })),
@@ -97,6 +99,7 @@ function TasksInner({ page, params }: AppProps) {
         {current === 'list' && <TasksPage params={params} />}
         {current === 'calendar' && <CalendarPage params={params} />}
         {current === 'day' && <DayPage params={params} />}
+        {current === 'output' && <OutputPage params={params} />}
         {current === 'team' && <TeamPage params={params} />}
         {current === 'week' && <WeekPage params={params} />}
         {current === 'trends' && <TrendsPage params={params} />}

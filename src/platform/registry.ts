@@ -1,5 +1,7 @@
 import { lazy, type ComponentType } from 'react';
 import type { Params } from '../lib/route';
+import type { Notice } from './types';
+import { localDayOf, prevWorkday } from '../lib/dates';
 import TasksApp from '../apps/tasks';
 import AdminApp from '../apps/admin';
 
@@ -19,6 +21,8 @@ export interface AppDef {
   defaultOn?: boolean;
   /** notification kinds that open a particular page of the app (e.g. weekly → 'week') */
   kindPages?: Record<string, string>;
+  /** extra address parameters for a notification (e.g. which day a summary is about) */
+  noticeParams?: (n: Notice) => Record<string, string>;
 }
 
 /**
@@ -29,7 +33,12 @@ export interface AppDef {
  *   4. switch it on for a department in Admin console → Departments
  */
 export const APPS: AppDef[] = [
-  { key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true, kindPages: { weekly: 'week', reminder: 'reminders' } },
+  {
+    key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true,
+    kindPages: { weekly: 'week', reminder: 'reminders', update_due: 'output', output_summary: 'output' },
+    // the morning summary is about the last weekday before the day it was sent
+    noticeParams: (n): Record<string, string> => n.kind === 'output_summary' ? { d: prevWorkday(localDayOf(n.created_at)) } : {},
+  },
   // the editor is large, so Notes only downloads when someone opens it
   { key: 'notes', name: 'Notes', component: lazy(() => import('../apps/notes')), refParam: 'note' },
 ];

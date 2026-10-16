@@ -2,11 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Clipboa
 import { useTaskApp } from './store';
 import { supabase } from '../../supabase';
 import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
-import { PRIORITIES, REMINDS, REPEATS, STATUSES, isDaily, isLate } from './labels';
+import { PRIORITIES, REMINDS, REPEATS, STATUSES, finished, isDaily, isLate } from './labels';
 import AssignedBy from './AssignedBy';
 import { DueMovesList } from './DueHistory';
 import { firstName } from '../../lib/labels';
-import { daysBetween, fmtDay, fmtDue, fmtStamp, today } from '../../lib/dates';
+import { daysBetween, fmtDay, fmtDue, fmtStamp, isWeekday, localDayOf, today } from '../../lib/dates';
 import { describe } from './activity';
 import { useFeatures } from '../../features/useFeatures';
 import { clipboardFiles } from '../../platform/files';
@@ -19,6 +19,7 @@ import { Checklist, useChecklist } from './Checklist';
 const editable = (t: TaskDraft | Task) => ({
   title: t.title, notes: t.notes, assignee_id: t.assignee_id, priority: t.priority, due_date: t.due_date,
   repeat: t.repeat ?? null, remind_days: t.remind_days ?? null, needs_check: t.needs_check ?? true,
+  daily_update: t.daily_update ?? false,
 });
 
 export default function TaskDrawer() {
@@ -26,7 +27,7 @@ export default function TaskDrawer() {
   const {
     drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper, isLead, refreshChecklist, myAppKeys, fullView,
-    canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark,
+    canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark, updatePosted, postUpdate,
   } = store;
   const features = useFeatures('tasks').filter(f => f.taskPanel);
   const panels = TASK_PANELS.filter(p => myAppKeys.includes(p.app));
@@ -41,12 +42,13 @@ export default function TaskDrawer() {
       return {
         title: d.title ?? '', notes: d.notes ?? '', status: d.status ?? 'todo', priority: d.priority ?? 'normal',
         due_date: d.due_date ?? today(), repeat: d.repeat ?? null, remind_days: d.remind_days ?? null, needs_check: true,
+        daily_update: d.daily_update ?? false,
         assignee_id: d.assignee_id && team.some(p => p.id === d.assignee_id) ? d.assignee_id : defaultAssignee,
       };
     }
     return task ? { ...editable(task), status: task.status } : {
       title: '', notes: '', status: 'todo', priority: 'normal', due_date: today(), assignee_id: defaultAssignee, repeat: null,
-      remind_days: null, needs_check: true,
+      remind_days: null, needs_check: true, daily_update: false,
     };
   });
   const [busy, setBusy] = useState(false);
@@ -59,6 +61,7 @@ export default function TaskDrawer() {
   const [newHelpers, setNewHelpers] = useState<string[]>([]);
   const [backReason, setBackReason] = useState<string | null>(null);
   const [reminding, setReminding] = useState(false);
+  const [daily, setDaily] = useState('');
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const files = useTaskFiles(task?.id ?? null);
   const steps = useChecklist(task?.id ?? null, refreshChecklist);
@@ -187,6 +190,14 @@ export default function TaskDrawer() {
     loadThread();
   }
 
+  async function postDaily() {
+    if (!task || !daily.trim()) return;
+    setBusy(true);
+    const ok = await postUpdate(task.id, daily);
+    setBusy(false);
+    if (ok) { setDaily(''); toast('Daily update posted'); setTab('comments'); loadThread(); }
+  }
+
   async function sendComment() {
     if (!task || !reply.trim()) return;
     const { error } = await supabase.from('task_comments').insert({ task_id: task.id, body: reply.trim() });
@@ -223,6 +234,11 @@ export default function TaskDrawer() {
   const overdue = task && isLate(task, today());
   const givenToOther = isNew ? form.assignee_id !== me.id : !!task && !!task.created_by && task.created_by !== form.assignee_id;
   const mayChangeCheck = isNew || (!!task && canCheck(task));
+  // daily updates: whoever gave it, or a manager; the owner only on a task they made themselves
+  const mayChangeDaily = isNew || (!!task && (task.created_by === me.id || canCheck(task)));
+  const ownerFirst = firstName(person(form.assignee_id)?.full_name ?? '');
+  const writesDaily = !!task && task.daily_update && task.assignee_id === me.id && !finished(task);
+  const postedToday = !!task && updatePosted(task.id, today());
   const checker = task ? checkerOf(task) : undefined;
   const lastTurn = history.find(a => a.kind === 'sent_back' || a.kind === 'status');
   const sentBack = task && task.status !== 'review' && task.status !== 'done' && lastTurn?.kind === 'sent_back' ? lastTurn : null;
@@ -382,12 +398,29 @@ export default function TaskDrawer() {
             </select>
           </label>
         )}
+        <label className="field">
+          <span>Daily update</span>
+          <select value={form.daily_update ? 'yes' : 'no'} onChange={e => set('daily_update', e.target.value === 'yes')}
+            disabled={readOnly || !mayChangeDaily} aria-label="Daily update"
+            title={mayChangeDaily ? undefined : 'Whoever gave this task (or a manager) decides'}>
+            <option value="no">Not needed</option>
+            <option value="yes">Every weekday</option>
+          </select>
+        </label>
       </div>
       {form.repeat && (isDaily(form.repeat) ? (
         <div className="field-note">A new one appears every {form.repeat === 'weekdays' ? 'weekday (Monday to Friday)' : 'day'} morning, with the same owner, helpers and checklist — even if the last one isn't finished, so a missed day stays overdue. To stop it, set this back to "Doesn't repeat".</div>
       ) : (
         <div className="field-note">When this is {givenToOther && form.needs_check ? 'signed off' : 'marked done'}, the next one is created automatically, with the same owner, helpers and checklist.</div>
       ))}
+
+      {form.daily_update && (
+        <div className="field-note">
+          {form.assignee_id === me.id ? 'You write' : `${ownerFirst} writes`} a short <strong>Daily update</strong> here every weekday while this is open
+          {task?.daily_update && task.daily_update_from ? `, from ${fmtDay(task.daily_update_from)}` : ', starting next weekday'}.
+          {' '}A missed one has to be written the next morning before the app opens.
+        </div>
+      )}
 
       {task && task.due_moves > 0 && (
         <div className="due-history">
@@ -467,6 +500,21 @@ export default function TaskDrawer() {
             return <div key={f.key} className="feature-slot"><Panel task={task!} /></div>;
           })}
 
+          {writesDaily && (
+            <div className={`daily-box ${postedToday ? 'done' : ''}`}>
+              <div className="daily-head">
+                <strong>Daily update</strong>
+                <span className="muted small">
+                  {postedToday ? "✓ Today's is in — add more if you like" : isWeekday(today()) ? 'Needed today' : 'Optional today (weekend)'}
+                </span>
+              </div>
+              <textarea rows={2} value={daily} onChange={e => setDaily(e.target.value)} aria-label="Daily update"
+                placeholder="What did you do on this today? What's next, anything holding it up?"
+                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) postDaily(); }} />
+              <div className="row end"><button className="btn primary sm" disabled={busy || !daily.trim()} onClick={postDaily}>Post update</button></div>
+            </div>
+          )}
+
           <div className="subtabs">
             <button className={tab === 'comments' ? 'on' : ''} onClick={() => setTab('comments')}>
               Comments {comments.length > 0 && <span className="count">{comments.length}</span>}
@@ -478,10 +526,17 @@ export default function TaskDrawer() {
             <div className="thread">
               {comments.length === 0 && <div className="muted small">No comments yet.</div>}
               {comments.map(c => (
-                <div key={c.id} className="comment">
+                <div key={c.id} className={`comment ${c.daily_for ? 'daily' : ''}`}>
                   <Avatar p={person(c.author_id)} size={26} />
                   <div className="c-body">
-                    <div className="c-head"><strong>{nameOf(c.author_id)}</strong> <span className="muted small">{fmtStamp(c.created_at)}</span></div>
+                    <div className="c-head">
+                      <strong>{nameOf(c.author_id)}</strong> <span className="muted small">{fmtStamp(c.created_at)}</span>
+                      {c.daily_for && (
+                        <span className="pill daily-pill">
+                          Daily update · {fmtDay(c.daily_for)}{localDayOf(c.created_at) > c.daily_for ? ' (written later)' : ''}
+                        </span>
+                      )}
+                    </div>
                     <div className="c-text">{c.body}</div>
                   </div>
                 </div>
