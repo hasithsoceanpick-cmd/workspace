@@ -4,6 +4,8 @@ import { supabase } from '../../supabase';
 import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
 import { PRIORITIES, REMINDS, REPEATS, STATUSES, finished, isDaily, isLate } from './labels';
 import AssignedBy from './AssignedBy';
+import OutsideWith from './OutsideWith';
+import ContactForm from './ContactForm';
 import { DueMovesList } from './DueHistory';
 import { firstName } from '../../lib/labels';
 import { daysBetween, fmtDay, fmtDue, fmtStamp, isWeekday, localDayOf, today } from '../../lib/dates';
@@ -19,7 +21,7 @@ import { Checklist, useChecklist } from './Checklist';
 const editable = (t: TaskDraft | Task) => ({
   title: t.title, notes: t.notes, assignee_id: t.assignee_id, priority: t.priority, due_date: t.due_date,
   repeat: t.repeat ?? null, remind_days: t.remind_days ?? null, needs_check: t.needs_check ?? true,
-  daily_update: t.daily_update ?? false,
+  daily_update: t.daily_update ?? false, contact_id: t.contact_id ?? null,
 });
 
 export default function TaskDrawer() {
@@ -27,7 +29,7 @@ export default function TaskDrawer() {
   const {
     drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper, isLead, refreshChecklist, myAppKeys, fullView,
-    canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark, updatePosted, postUpdate,
+    canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark, updatePosted, postUpdate, contacts, contactOf,
   } = store;
   const features = useFeatures('tasks').filter(f => f.taskPanel);
   const panels = TASK_PANELS.filter(p => myAppKeys.includes(p.app));
@@ -42,13 +44,13 @@ export default function TaskDrawer() {
       return {
         title: d.title ?? '', notes: d.notes ?? '', status: d.status ?? 'todo', priority: d.priority ?? 'normal',
         due_date: d.due_date ?? today(), repeat: d.repeat ?? null, remind_days: d.remind_days ?? null, needs_check: true,
-        daily_update: d.daily_update ?? false,
+        daily_update: d.daily_update ?? false, contact_id: d.contact_id ?? null,
         assignee_id: d.assignee_id && team.some(p => p.id === d.assignee_id) ? d.assignee_id : defaultAssignee,
       };
     }
     return task ? { ...editable(task), status: task.status } : {
       title: '', notes: '', status: 'todo', priority: 'normal', due_date: today(), assignee_id: defaultAssignee, repeat: null,
-      remind_days: null, needs_check: true, daily_update: false,
+      remind_days: null, needs_check: true, daily_update: false, contact_id: null,
     };
   });
   const [busy, setBusy] = useState(false);
@@ -62,6 +64,7 @@ export default function TaskDrawer() {
   const [backReason, setBackReason] = useState<string | null>(null);
   const [reminding, setReminding] = useState(false);
   const [daily, setDaily] = useState('');
+  const [addingContact, setAddingContact] = useState(false);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const files = useTaskFiles(task?.id ?? null);
   const steps = useChecklist(task?.id ?? null, refreshChecklist);
@@ -264,6 +267,7 @@ export default function TaskDrawer() {
         );
       })()}>
       {task && <AssignedBy t={task} big />}
+      {task && <OutsideWith t={task} big />}
       {task && reminding && (
         <div className="drawer-remind"><ReminderForm taskId={task.id} defaultText={task.title} onSaved={() => setReminding(false)} /></div>
       )}
@@ -366,6 +370,37 @@ export default function TaskDrawer() {
           </select>
         </label>
       </div>
+
+      <div className="field outside-field">
+        <span>Given to someone outside the app</span>
+        {addingContact ? (
+          <ContactForm withNote={false} onCancel={() => setAddingContact(false)}
+            onSaved={c => { set('contact_id', c.id); setAddingContact(false); }} />
+        ) : (
+          <select aria-label="Given to (outside the app)" value={form.contact_id ?? ''} disabled={readOnly}
+            onChange={e => {
+              if (e.target.value === 'new') setAddingContact(true);
+              else set('contact_id', e.target.value ? Number(e.target.value) : null);
+            }}>
+            <option value="">No one — the owner does it</option>
+            {contacts.filter(c => c.active || c.id === form.contact_id).map(c => (
+              <option key={c.id} value={c.id}>{c.name}{c.organisation ? ` · ${c.organisation}` : ''}{c.active ? '' : ' (removed from list)'}</option>
+            ))}
+            <option value="new">+ Add someone new…</option>
+          </select>
+        )}
+      </div>
+      {form.contact_id && !addingContact && (() => {
+        const c = contactOf(form.contact_id);
+        return c && (
+          <div className="field-note">
+            {form.assignee_id === me.id ? 'You follow' : `${ownerFirst} follows`} up with {c.name}
+            {c.phone && <> · <a href={`tel:${c.phone.replace(/\s+/g, '')}`}>{c.phone}</a></>}
+            {c.email && <> · <a href={`mailto:${c.email}`}>{c.email}</a></>}.
+            {' '}Note each chase in the comments — the <strong>Follow-ups</strong> tab keeps the record.
+          </div>
+        );
+      })()}
 
       <div className="fields">
         <label className="field">

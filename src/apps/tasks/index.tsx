@@ -15,6 +15,7 @@ import HomePage from './pages/HomePage';
 import NewPage from './pages/NewPage';
 import RemindersPage from './pages/RemindersPage';
 import OutputPage from './pages/OutputPage';
+import FollowUpsPage from './pages/FollowUpsPage';
 
 // managers and senior executives land on Home the first time the app opens (Today is one tab away)
 let landed = false;
@@ -57,6 +58,7 @@ function TasksInner({ page, params }: AppProps) {
     { id: '', label: 'Today', show: true },
     { id: 'new', label: 'New', show: inbox.length > 0 || page === 'new', count: inbox.length },
     { id: 'list', label: 'Tasks', show: true },
+    { id: 'followups', label: 'Follow-ups', show: true },
     { id: 'calendar', label: 'Calendar', show: true },
     { id: 'day', label: 'Day review', show: true },
     { id: 'output', label: 'My output', show: true },
@@ -100,6 +102,7 @@ function TasksInner({ page, params }: AppProps) {
         {current === 'calendar' && <CalendarPage params={params} />}
         {current === 'day' && <DayPage params={params} />}
         {current === 'output' && <OutputPage params={params} />}
+        {current === 'followups' && <FollowUpsPage params={params} />}
         {current === 'team' && <TeamPage params={params} />}
         {current === 'week' && <WeekPage params={params} />}
         {current === 'trends' && <TrendsPage params={params} />}

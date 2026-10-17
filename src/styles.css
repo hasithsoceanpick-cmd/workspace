@@ -1053,3 +1053,42 @@ button.out-row:hover, .out-row.link:hover { background: var(--surface-2); }
 .gate-item textarea { width: 100%; }
 .gate-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 6px; }
 @media (max-width: 640px) { .output-page .out-tiles { grid-template-columns: repeat(2, 1fr); } }
+
+/* Round 9: people outside the app (Follow-ups) */
+.outside-with { display: flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; margin-bottom: 2px; font-size: 11.5px; line-height: 1.3; color: #0e7490; }
+.outside-with .ow-icon { flex: none; display: grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: color-mix(in srgb, #0e7490 14%, transparent); font-size: 10px; font-weight: 700; }
+.outside-with .ow-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outside-with strong { font-weight: 600; }
+.outside-with.big { margin: 0 0 10px; padding: 7px 10px; font-size: 13px; background: color-mix(in srgb, #0e7490 7%, var(--surface)); border: 1px solid color-mix(in srgb, #0e7490 25%, var(--border)); border-radius: 8px; }
+.outside-with.big .ow-icon { width: 20px; height: 20px; font-size: 12px; }
+.bcard .outside-with { margin-bottom: 4px; }
+.outside-field select { width: 100%; }
+.contact-form { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); }
+.contact-form .field { margin-bottom: 8px; }
+.contact-form input { width: 100%; }
+.cf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.followups .filters input[type=search] { width: 180px; }
+.fu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; align-items: start; }
+.fu-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; min-width: 0; }
+.fu-card.late { border-color: color-mix(in srgb, var(--danger) 40%, var(--border)); }
+.fu-head { display: flex; align-items: flex-start; gap: 10px; }
+.fu-badge { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: color-mix(in srgb, #0e7490 14%, var(--surface)); color: #0e7490; font-weight: 700; font-size: 13px; }
+.fu-name { font-size: 14.5px; overflow-wrap: anywhere; }
+.fu-name .pill { margin-left: 6px; }
+.fu-contact { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 2px; }
+.fu-counts { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.fu-last { margin: 10px 0 2px; padding: 6px 9px; border-radius: 8px; background: var(--surface-2); overflow-wrap: anywhere; }
+.fu-list { margin-top: 10px; }
+.fu-done { opacity: .85; }
+.fu-none { padding: 10px 0 2px; }
+.fu-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.fu-removed { margin-top: 18px; }
+.fu-removed .fu-grid { margin-top: 10px; }
+.outside-hint { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 16px; }
+@media (max-width: 640px) {
+  .fu-grid { grid-template-columns: 1fr; }
+  .cf-grid { grid-template-columns: 1fr; }
+  .followups .filters input[type=search] { width: 100%; }
+  .outside-hint { flex-direction: column; align-items: flex-start; }
+}
+@media (prefers-color-scheme: dark) { .outside-with, .fu-badge { color: #67e8f9; } }

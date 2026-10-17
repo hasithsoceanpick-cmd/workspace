@@ -8,6 +8,7 @@ import type { Task, TimeBlock } from '../types';
 import { finished, repeatLabel } from '../labels';
 import Avatar from '../../../platform/Avatar';
 import AssignedBy from '../AssignedBy';
+import OutsideWith from '../OutsideWith';
 import MiniTasks from '../MiniTasks';
 
 // Timeline runs 07:00 – 20:30, in 30-minute rows, snapping to 15 minutes.
@@ -239,6 +240,7 @@ export default function TodayPage({ params }: { params: Params }) {
         {mine && <span className="grip" aria-hidden="true">⋮⋮</span>}
         <button className="plan-title" onClick={() => openTask(t.id)}>
           <AssignedBy t={t} />
+          <OutsideWith t={t} />
           <span className="pt-title">{t.title}</span>
           <span className="muted tiny">
             {fmtDue(t.due_date)}{t.due_date < td && ` · ${daysBetween(t.due_date, td)}d late`}

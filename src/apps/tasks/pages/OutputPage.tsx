@@ -6,6 +6,7 @@ import { addDays, dayBounds, daysBetween, fmtDay, fmtLong, fmtTime, isWeekday, l
 import { firstName } from '../../../lib/labels';
 import { finished, finishedAt } from '../labels';
 import AssignedBy from '../AssignedBy';
+import OutsideWith from '../OutsideWith';
 import type { MiniTask, Task, TaskComment, WorkLog } from '../types';
 
 type Step = { id: number; task_id: number; body: string; done_at: string };
@@ -143,6 +144,7 @@ export default function OutputPage({ params }: { params: Params }) {
                   <span className="out-time">{fmtTime(finishedAt(t)!)}</span>
                   <span className="grow">
                     <AssignedBy t={t} />
+                    <OutsideWith t={t} />
                     <span className="out-title">{t.title}</span>
                   </span>
                   {t.status === 'review' && <span className="pill s-review">Waiting for sign-off</span>}

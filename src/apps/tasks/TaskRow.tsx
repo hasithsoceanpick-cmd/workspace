@@ -7,6 +7,7 @@ import { finished, isDaily, isLate, repeatLabel, statusLabel } from './labels';
 import MovedBadge from './DueHistory';
 import Avatar from '../../platform/Avatar';
 import AssignedBy from './AssignedBy';
+import OutsideWith from './OutsideWith';
 
 export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
   const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf, marks, updateDue, updatePosted } = useTaskApp();
@@ -41,6 +42,7 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
       </button>
       <div className="tr-main">
         <AssignedBy t={t} />
+        <OutsideWith t={t} />
         <div className="tr-title">{t.title}</div>
         <div className="tr-meta">
           {marks(t.id).pinned && <span className="pin-star" title="Pinned">★</span>}

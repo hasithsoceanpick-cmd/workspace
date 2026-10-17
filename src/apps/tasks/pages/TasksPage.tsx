@@ -13,12 +13,12 @@ const byDue = (a: Task, b: Task) =>
   a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id;
 
 export default function TasksPage({ params }: { params: Params }) {
-  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks } = useTaskApp();
+  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks, contactOf } = useTaskApp();
   const [exporting, setExporting] = useState(false);
   async function doExport() {
     setExporting(true);
     try {
-      await exportTasks({ deptName: dept!.name, deptId: dept!.id, tasks, person, helpersOf, progressOf });
+      await exportTasks({ deptName: dept!.name, deptId: dept!.id, tasks, person, helpersOf, progressOf, contactOf });
     } catch (e) { fail(e); }
     setExporting(false);
   }

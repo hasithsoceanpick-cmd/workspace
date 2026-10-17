@@ -7,6 +7,7 @@ import Avatar from '../../../platform/Avatar';
 import type { Task } from '../types';
 import { repeatLabel, statusLabel } from '../labels';
 import AssignedBy from '../AssignedBy';
+import OutsideWith from '../OutsideWith';
 import MovedBadge from '../DueHistory';
 import { finished, finishedAt } from '../labels';
 
@@ -100,6 +101,7 @@ function Board({ params }: { params: Params }) {
         onClick={() => openTask(t.id)} role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === 'Enter') openTask(t.id); }}>
         <AssignedBy t={t} />
+        <OutsideWith t={t} />
         <div className="bcard-title">{t.title}</div>
         <div className="bcard-meta">
           <span className={late ? 'danger strong' : 'muted'}>

@@ -3,7 +3,7 @@ import { supabase } from '../../supabase';
 import { usePlatform } from '../../platform/store';
 import { removeFiles } from '../../platform/files';
 import type { Profile } from '../../platform/types';
-import type { Task, TaskDraft, TaskFollow, TaskHelper } from './types';
+import type { Contact, Task, TaskDraft, TaskFollow, TaskHelper } from './types';
 import { isWeekday, prevWorkday, today } from '../../lib/dates';
 
 type DrawerState = { mode: 'edit'; id: number } | { mode: 'new'; defaults: Partial<TaskDraft> } | null;
@@ -52,6 +52,12 @@ interface TasksStore {
   updateDue: (t: Task) => boolean;
   /** the owner writes a Daily update (for today, or the last weekday) */
   postUpdate: (taskId: number, body: string, day?: string) => Promise<boolean>;
+  /** people outside the app (this department's list, including ones taken off it) */
+  contacts: Contact[];
+  contactOf: (id: number | null | undefined) => Contact | undefined;
+  saveContact: (c: Partial<Contact> & { name: string }) => Promise<Contact | null>;
+  /** delete if no task mentions them, otherwise take them off the list */
+  removeContact: (id: number) => Promise<'deleted' | 'hidden' | null>;
   /** checklist progress per task id */
   progressOf: (taskId: number) => { done: number; total: number } | null;
   refreshChecklist: () => Promise<void>;
@@ -77,6 +83,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const [steps, setSteps] = useState<{ task_id: number; done: boolean }[]>([]);
   const [follows, setFollows] = useState<TaskFollow[]>([]);
   const [posted, setPosted] = useState<Set<string>>(new Set());
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [drawer, setDrawer] = useState<DrawerState>(null);
 
@@ -92,16 +99,18 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   }, [deptId]);
 
   const refresh = useCallback(async () => {
-    const [t, h, f, u] = await Promise.all([
+    const [t, h, f, u, c] = await Promise.all([
       supabase.from('tasks').select('*').eq('department_id', deptId).order('due_date').order('id'),
       supabase.from('task_helpers').select('*').eq('department_id', deptId),
       supabase.from('task_follows').select('*').eq('user_id', me.id),
       supabase.from('task_comments').select('task_id,daily_for').gte('daily_for', prevWorkday(today())),
+      supabase.from('task_contacts').select('*').eq('department_id', deptId).order('name'),
     ]);
     if (t.error) return fail(t.error);
     setTasks(t.data as Task[]);
     if (h.data) setHelpers(h.data as TaskHelper[]);
     if (f.data) setFollows(f.data as TaskFollow[]);
+    if (c.data) setContacts(c.data as Contact[]);
     if (u.data) setPosted(new Set((u.data as { task_id: number; daily_for: string }[]).map(x => `${x.task_id}:${x.daily_for}`)));
     setLoaded(true);
     refreshChecklist();
@@ -283,12 +292,35 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return true;
   }, [fail, refreshNotices]);
 
+  const contactOf = useCallback((id: number | null | undefined) => (id ? contacts.find(c => c.id === id) : undefined), [contacts]);
+  const saveContact = useCallback(async (c: Partial<Contact> & { name: string }) => {
+    const row = { name: c.name.trim(), organisation: c.organisation ?? '', phone: c.phone ?? '', email: c.email ?? '', note: c.note ?? '' };
+    const res = c.id
+      ? await supabase.from('task_contacts').update({ ...row, ...(c.active !== undefined ? { active: c.active } : {}) }).eq('id', c.id).select().maybeSingle()
+      : await supabase.from('task_contacts').insert({ ...row, department_id: deptId }).select().single();
+    if (res.error || !res.data) { fail(res.error ?? new Error('Only whoever added them, or a manager / senior executive, can change their details.')); return null; }
+    const saved = res.data as Contact;
+    setContacts(cs => [...cs.filter(x => x.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name)));
+    return saved;
+  }, [deptId, fail]);
+  const removeContact = useCallback(async (id: number) => {
+    const used = tasks.some(t => t.contact_id === id);
+    if (!used) {
+      const { error, count } = await supabase.from('task_contacts').delete({ count: 'exact' }).eq('id', id);
+      if (!error && count) { setContacts(cs => cs.filter(x => x.id !== id)); return 'deleted' as const; }
+    }
+    const { data, error } = await supabase.from('task_contacts').update({ active: false }).eq('id', id).select().maybeSingle();
+    if (error || !data) { fail(error ?? new Error('Only whoever added them, or a manager / senior executive, can remove them.')); return null; }
+    setContacts(cs => cs.map(x => (x.id === id ? data as Contact : x)));
+    return 'hidden' as const;
+  }, [tasks, fail]);
+
   const value: TasksStore = {
     inDept, fullView, isLead, team, canAssignTo, tasks, loaded, refresh,
     createTask, updateTask, deleteTask, canDelete,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper,
     progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack, inInbox, inbox, marks, setMark,
-    updatePosted, updateDue, postUpdate,
+    updatePosted, updateDue, postUpdate, contacts, contactOf, saveContact, removeContact,
     drawer,
     openTask: (id) => setDrawer({ mode: 'edit', id }),
     newTask: (defaults = {}) => setDrawer({ mode: 'new', defaults }),

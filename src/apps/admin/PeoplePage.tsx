@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePlatform } from '../../platform/store';
 import { supabase } from '../../supabase';
-import { setParams, type Params } from '../../lib/route';
+import { go, setParams, type Params } from '../../lib/route';
 import { ROLES, roleLabel } from '../../lib/labels';
 import { fmtStamp } from '../../lib/dates';
 import type { Profile, Role } from '../../platform/types';
@@ -132,6 +132,14 @@ export default function PeoplePage({ params }: { params: Params }) {
         Someone leaving? Deactivate keeps their history. Delete removes the login completely and only works once nothing is assigned to them.
         Click an avatar to change that person's calendar colour.
       </p>
+      <div className="card outside-hint">
+        <div>
+          <strong>Giving work to someone who doesn't use the app?</strong>
+          <div className="muted small">Bank officers, suppliers, colleagues elsewhere — keep them in <strong>Tasks → Follow-ups</strong>,
+            not here. They don't get a login; you give them tasks and the app keeps the record for chasing.</div>
+        </div>
+        <button className="btn sm" onClick={() => go('tasks', 'followups')}>Open Follow-ups</button>
+      </div>
     </div>
   );
 }

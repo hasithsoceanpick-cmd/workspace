@@ -14,8 +14,10 @@ export async function exportTasks(opts: {
   person: (id: string | null | undefined) => Profile | undefined;
   helpersOf: (id: number) => string[];
   progressOf: (id: number) => { done: number; total: number } | null;
+  contactOf?: (id: number | null | undefined) => { name: string; organisation: string } | undefined;
 }) {
-  const { tasks, person, helpersOf, progressOf } = opts;
+  const { tasks, person, helpersOf, progressOf, contactOf } = opts;
+  const outside = (id: number | null) => { const c = contactOf?.(id); return c ? (c.organisation ? `${c.name} (${c.organisation})` : c.name) : ''; };
   const name = (id: string | null | undefined) => person(id)?.full_name ?? '';
   const td = today();
   const sorted = [...tasks].sort((a, b) =>
@@ -25,6 +27,7 @@ export async function exportTasks(opts: {
     name: 'Tasks',
     columns: [
       { header: 'Task #', width: 8 }, { header: 'Title', width: 44 }, { header: 'Owner', width: 20 },
+      { header: 'Given to (outside the app)', width: 28 },
       { header: 'Helpers', width: 24 }, { header: 'Status', width: 20 }, { header: 'Priority', width: 10 },
       { header: 'Deadline', width: 13 }, { header: 'First deadline', width: 14 }, { header: 'Times moved', width: 12 },
       { header: 'Overdue days', width: 13 }, { header: 'Repeats', width: 11 }, { header: 'Checklist', width: 10 },
@@ -37,7 +40,7 @@ export async function exportTasks(opts: {
       const late = isLate(t, td)
         ? Math.round((Date.parse(td) - Date.parse(t.due_date)) / 86400000) : null;
       return [
-        t.id, t.title, name(t.assignee_id), helpersOf(t.id).map(name).join(', '), statusLabel(t.status),
+        t.id, t.title, name(t.assignee_id), outside(t.contact_id), helpersOf(t.id).map(name).join(', '), statusLabel(t.status),
         t.priority[0].toUpperCase() + t.priority.slice(1), xDate(t.due_date), xDate(t.original_due ?? t.due_date),
         t.due_moves ?? 0, late, repeatLabel(t.repeat), p ? `${p.done}/${p.total}` : '', name(t.created_by),
         xDate(t.created_at), xDate(t.submitted_at ?? t.completed_at), name(t.checked_by), t.sent_back_n || null,

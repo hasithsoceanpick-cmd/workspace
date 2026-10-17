@@ -42,6 +42,22 @@ export interface Task {
   daily_update: boolean;
   /** first weekday an update is needed (set by the database) */
   daily_update_from: string | null;
+  /** given to someone outside the app (no login); the owner follows up */
+  contact_id: number | null;
+}
+
+/** Someone without a login that work is given to — a bank officer, a supplier — for follow-up */
+export interface Contact {
+  id: number;
+  department_id: string;
+  name: string;
+  organisation: string;
+  phone: string;
+  email: string;
+  note: string;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
 }
 
 /** My pin / follow marks on a task */
@@ -112,6 +128,7 @@ export interface TaskDraft {
   remind_days?: number | null;
   acknowledged_at?: string | null;
   daily_update?: boolean;
+  contact_id?: number | null;
 }
 
 export interface TaskHelper {
