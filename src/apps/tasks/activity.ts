@@ -1,6 +1,6 @@
 import type { TaskActivity as Activity } from './types';
 import { fmtDay } from '../../lib/dates';
-import { repeatLabel, statusLabel } from './labels';
+import { healthLabel, repeatLabel, statusLabel } from './labels';
 
 /** Turn a history entry into a short verb + optional detail. */
 export function describe(a: Activity, nameOf: (id: string | null) => string): { verb: string; detail?: string; tone?: string } {
@@ -38,6 +38,10 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
       return { verb: 'sent it back', detail: a.new_value ?? undefined, tone: 'warn' };
     case 'acknowledged':
       return { verb: 'opened it (Got it)' };
+    case 'health': {
+      const [h, note] = (a.new_value ?? '').split(/\|(.*)/s);
+      return { verb: `set the status to ${healthLabel(h || null)}`, detail: note || undefined, tone: h === 'on_track' ? 'good' : h ? 'warn' : undefined };
+    }
     case 'daily_update':
       return { verb: a.old_value ? `posted the daily update for ${fmtDay(a.old_value)}` : 'posted a daily update', detail: a.new_value ?? undefined, tone: 'good' };
     case 'step':

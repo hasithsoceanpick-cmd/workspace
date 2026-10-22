@@ -6,6 +6,7 @@ import { firstName } from '../../../lib/labels';
 import { finished } from '../labels';
 import type { Task } from '../types';
 import TaskRow from '../TaskRow';
+import StageRow from '../StageRow';
 import { exportTasks } from '../export';
 
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
@@ -13,7 +14,7 @@ const byDue = (a: Task, b: Task) =>
   a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id;
 
 export default function TasksPage({ params }: { params: Params }) {
-  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks, contactOf } = useTaskApp();
+  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks, contactOf, myStages } = useTaskApp();
   const [exporting, setExporting] = useState(false);
   async function doExport() {
     setExporting(true);
@@ -176,6 +177,13 @@ export default function TasksPage({ params }: { params: Params }) {
         <section className="group pinned-group">
           <h2>★ Pinned <span className="count">{pinned.length}</span></h2>
           <div className="list">{pinned.map(t => <TaskRow key={t.id} t={t} showWho={t.assignee_id !== me.id} />)}</div>
+        </section>
+      )}
+
+      {loaded && show === 'open' && myStages.length > 0 && who === 'me' && (
+        <section className="group stages-group">
+          <h2>Your project stages <span className="count">{myStages.length}</span></h2>
+          <div className="list">{myStages.map(s => <StageRow key={s.id} s={s} />)}</div>
         </section>
       )}
 

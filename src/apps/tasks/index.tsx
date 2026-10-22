@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import { TasksProvider, useTasks } from './store';
 import { go, replaceRoute, setParams } from '../../lib/route';
 import type { AppProps } from '../../platform/registry';
@@ -6,16 +6,18 @@ import { useFeatures } from '../../features/useFeatures';
 import TaskDrawer from './TaskDrawer';
 import TodayPage from './pages/TodayPage';
 import TasksPage from './pages/TasksPage';
-import CalendarPage from './pages/CalendarPage';
-import DayPage from './pages/DayPage';
-import TeamPage from './pages/TeamPage';
-import WeekPage from './pages/WeekPage';
-import TrendsPage from './pages/TrendsPage';
+const CalendarPage = lazy(() => import('./pages/CalendarPage'));
+const DayPage = lazy(() => import('./pages/DayPage'));
+const TeamPage = lazy(() => import('./pages/TeamPage'));
+const WeekPage = lazy(() => import('./pages/WeekPage'));
+const TrendsPage = lazy(() => import('./pages/TrendsPage'));
 import HomePage from './pages/HomePage';
 import NewPage from './pages/NewPage';
 import RemindersPage from './pages/RemindersPage';
-import OutputPage from './pages/OutputPage';
-import FollowUpsPage from './pages/FollowUpsPage';
+const OutputPage = lazy(() => import('./pages/OutputPage'));
+const FollowUpsPage = lazy(() => import('./pages/FollowUpsPage'));
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
+const ProjectPage = lazy(() => import('./pages/ProjectPage'));
 
 // managers and senior executives land on Home the first time the app opens (Today is one tab away)
 let landed = false;
@@ -58,6 +60,7 @@ function TasksInner({ page, params }: AppProps) {
     { id: '', label: 'Today', show: true },
     { id: 'new', label: 'New', show: inbox.length > 0 || page === 'new', count: inbox.length },
     { id: 'list', label: 'Tasks', show: true },
+    { id: 'projects', label: 'Projects', show: true },
     { id: 'followups', label: 'Follow-ups', show: true },
     { id: 'calendar', label: 'Calendar', show: true },
     { id: 'day', label: 'Day review', show: true },
@@ -67,8 +70,9 @@ function TasksInner({ page, params }: AppProps) {
     ...featurePages.map(p => ({ id: `x-${p.id}`, label: p.label, show: true })),
   ].filter(t => t.show);
   // Reports has two views: this week ('week', opened by the Monday alert) and month-by-month trends
-  const current = tabs.some(t => t.id === page) ? page : page === 'trends' && isLead ? 'trends' : page === 'reminders' ? 'reminders' : '';
-  const activeTab = current === 'trends' ? 'week' : current;
+  const current = tabs.some(t => t.id === page) ? page : page === 'trends' && isLead ? 'trends' : page === 'reminders' ? 'reminders'
+    : page === 'project' ? 'project' : '';
+  const activeTab = current === 'trends' ? 'week' : current === 'project' ? 'projects' : current;
   const FeaturePage = featurePages.find(p => `x-${p.id}` === current)?.component;
 
   return (
@@ -89,6 +93,7 @@ function TasksInner({ page, params }: AppProps) {
         )}
       </div>
       <main className="main">
+        <Suspense fallback={<div className="page"><div className="empty">Loading…</div></div>}>
         {inbox.length > 0 && current !== 'new' && current !== 'home' && (
           <div className="page"><button className="new-banner" onClick={() => go('tasks', 'new')}>
             <strong>{inbox.length} new task{inbox.length === 1 ? '' : 's'} for you</strong> — open them and press Got it →
@@ -103,10 +108,13 @@ function TasksInner({ page, params }: AppProps) {
         {current === 'day' && <DayPage params={params} />}
         {current === 'output' && <OutputPage params={params} />}
         {current === 'followups' && <FollowUpsPage params={params} />}
+        {current === 'projects' && <ProjectsPage params={params} />}
+        {current === 'project' && <ProjectPage params={params} />}
         {current === 'team' && <TeamPage params={params} />}
         {current === 'week' && <WeekPage params={params} />}
         {current === 'trends' && <TrendsPage params={params} />}
         {FeaturePage && <FeaturePage params={params} />}
+        </Suspense>
       </main>
       {drawer && <TaskDrawer key={drawer.mode === 'edit' ? `e${drawer.id}` : 'new'} />}
     </>

@@ -6,6 +6,10 @@ import { PRIORITIES, REMINDS, REPEATS, STATUSES, finished, isDaily, isLate } fro
 import AssignedBy from './AssignedBy';
 import OutsideWith from './OutsideWith';
 import ContactForm from './ContactForm';
+import { Stages, useStages } from './Stages';
+import ProjectStatus from './ProjectStatus';
+import MiniGiveForm from './MiniGiveForm';
+import { go } from '../../lib/route';
 import { DueMovesList } from './DueHistory';
 import { firstName } from '../../lib/labels';
 import { daysBetween, fmtDay, fmtDue, fmtStamp, isWeekday, localDayOf, today } from '../../lib/dates';
@@ -44,7 +48,7 @@ export default function TaskDrawer() {
       return {
         title: d.title ?? '', notes: d.notes ?? '', status: d.status ?? 'todo', priority: d.priority ?? 'normal',
         due_date: d.due_date ?? today(), repeat: d.repeat ?? null, remind_days: d.remind_days ?? null, needs_check: true,
-        daily_update: d.daily_update ?? false, contact_id: d.contact_id ?? null,
+        daily_update: d.daily_update ?? false, contact_id: d.contact_id ?? null, nature: d.nature ?? 'task',
         assignee_id: d.assignee_id && team.some(p => p.id === d.assignee_id) ? d.assignee_id : defaultAssignee,
       };
     }
@@ -65,6 +69,9 @@ export default function TaskDrawer() {
   const [reminding, setReminding] = useState(false);
   const [daily, setDaily] = useState('');
   const [addingContact, setAddingContact] = useState(false);
+  // + New: a task, a mini task (for a day's Today list) or a project (one big task with dated stages)
+  const [kind, setKind] = useState<'task' | 'mini' | 'project'>(drawer?.mode === 'new' && drawer.defaults.nature === 'project' ? 'project' : 'task');
+  const stages = useStages(task?.id ?? null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const files = useTaskFiles(task?.id ?? null);
   const steps = useChecklist(task?.id ?? null, refreshChecklist);
@@ -138,11 +145,12 @@ export default function TaskDrawer() {
       const t = await createTask({ ...form, title: form.title.trim() });
       if (t) {
         for (const h of newHelpers.filter(h => h !== t.assignee_id)) await addHelper(t.id, h);
-        await steps.flush(t.id);
+        if (t.nature === 'project') await stages.flush(t.id); else await steps.flush(t.id);
         await files.flush(t.id);
         refreshChecklist();
         const who = person(t.assignee_id);
-        toast(t.assignee_id === me.id ? 'Task added' : `Assigned to ${firstName(who?.full_name ?? '')}`);
+        const what = t.nature === 'project' ? 'Project' : 'Task';
+        toast(t.assignee_id === me.id ? `${what} added` : `${what} given to ${firstName(who?.full_name ?? '')}`);
         setBusy(false);
         closeDrawer();
       } else setBusy(false);
@@ -248,9 +256,21 @@ export default function TaskDrawer() {
   const creator = person(task?.created_by);
   const nameOf = (id: string | null) => person(id)?.full_name ?? 'Someone';
   const canRemoveFile = (a: { created_by: string | null }) => a.created_by === me.id || (!!task && !readOnly);
+  const isProject = isNew ? kind === 'project' : task?.nature === 'project';
+  const pick = (k: 'task' | 'mini' | 'project') => { setKind(k); if (k !== 'mini') set('nature', k); };
+  const natureSwitch = isNew && (
+    <div className="seg nature-switch" role="radiogroup" aria-label="What are you adding">
+      {([['task', 'Task'], ['mini', 'Mini task'], ['project', 'Project']] as const).map(([k, label]) => (
+        <button key={k} type="button" className={`seg-btn ${kind === k ? 'on' : ''}`} onClick={() => pick(k)}>{label}</button>
+      ))}
+    </div>
+  );
+  if (isNew && kind === 'mini') {
+    return <Frame title="New mini task" onClose={closeDrawer}>{natureSwitch}<MiniGiveForm onDone={closeDrawer} /></Frame>;
+  }
 
   return (
-    <Frame title={isNew ? 'New task' : `Task #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}
+    <Frame title={isNew ? (isProject ? 'New project' : 'New task') : `${isProject ? 'Project' : 'Task'} #${task!.id}`} onClose={closeDrawer} onPaste={onPaste}
       tools={task && (() => {
         const m = marks(task.id);
         const involved = task.assignee_id === me.id || task.created_by === me.id || helpersOf(task.id).includes(me.id);
@@ -266,8 +286,15 @@ export default function TaskDrawer() {
           </>
         );
       })()}>
+      {natureSwitch}
       {task && <AssignedBy t={task} big />}
       {task && <OutsideWith t={task} big />}
+      {task && isProject && (
+        <div className="project-head">
+          <span className="pill project">Project</span>
+          <button type="button" className="link" onClick={() => { closeDrawer(); go('tasks', 'project', { id: String(task.id) }); }}>Open the project page →</button>
+        </div>
+      )}
       {task && reminding && (
         <div className="drawer-remind"><ReminderForm taskId={task.id} defaultText={task.title} onSaved={() => setReminding(false)} /></div>
       )}
@@ -358,7 +385,7 @@ export default function TaskDrawer() {
           )}
         </label>
         <label className="field">
-          <span>Deadline {task && form.due_date === task.due_date && (
+          <span>{isProject ? 'End date' : 'Deadline'} {task && form.due_date === task.due_date && (
             <em className={overdue ? 'danger' : 'muted'}>· {overdue ? `${daysBetween(task.due_date, today())}d overdue` : fmtDue(task.due_date)}</em>
           )}</span>
           <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} required disabled={readOnly} />
@@ -402,8 +429,10 @@ export default function TaskDrawer() {
         );
       })()}
 
+      {task && isProject && <ProjectStatus task={task} />}
+
       <div className="fields">
-        <label className="field">
+        {!isProject && <label className="field">
           <span>Repeat</span>
           <select value={form.repeat ?? ''} disabled={readOnly} aria-label="Repeat"
             onChange={e => {
@@ -413,7 +442,7 @@ export default function TaskDrawer() {
             <option value="">Doesn't repeat</option>
             {REPEATS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
-        </label>
+        </label>}
         {!isDaily(form.repeat) && (
           <label className="field">
             <span>Early reminder</span>
@@ -494,7 +523,9 @@ export default function TaskDrawer() {
           onChange={e => set('notes', e.target.value)} />
       </label>
 
-      <Checklist list={steps} />
+      {isProject
+        ? <Stages list={stages} ownerId={form.assignee_id} canRun={isNew || (!!task && !readOnly)} endDate={form.due_date} />
+        : <Checklist list={steps} />}
       <TaskFiles files={files} canRemove={canRemoveFile} />
 
       {isNew ? (

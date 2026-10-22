@@ -3,7 +3,7 @@ import { supabase } from '../../supabase';
 import { usePlatform } from '../../platform/store';
 import { removeFiles } from '../../platform/files';
 import type { Profile } from '../../platform/types';
-import type { Contact, Task, TaskDraft, TaskFollow, TaskHelper } from './types';
+import type { ChecklistItem, Contact, Task, TaskDraft, TaskFollow, TaskHelper } from './types';
 import { isWeekday, prevWorkday, today } from '../../lib/dates';
 
 type DrawerState = { mode: 'edit'; id: number } | { mode: 'new'; defaults: Partial<TaskDraft> } | null;
@@ -58,6 +58,13 @@ interface TasksStore {
   saveContact: (c: Partial<Contact> & { name: string }) => Promise<Contact | null>;
   /** delete if no task mentions them, otherwise take them off the list */
   removeContact: (id: number) => Promise<'deleted' | 'hidden' | null>;
+  /** a project's stages, by date */
+  stagesOf: (taskId: number) => ChecklistItem[];
+  /** who does a stage (its person, or the project owner) */
+  stageOwner: (s: ChecklistItem) => string | undefined;
+  /** open stages of open projects that are mine to do */
+  myStages: ChecklistItem[];
+  toggleStage: (s: ChecklistItem) => Promise<void>;
   /** checklist progress per task id */
   progressOf: (taskId: number) => { done: number; total: number } | null;
   refreshChecklist: () => Promise<void>;
@@ -80,7 +87,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const { me, isAdmin, dept, deptPeople, person, userHasApp, fail, toast, refreshNotices } = usePlatform();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [helpers, setHelpers] = useState<TaskHelper[]>([]);
-  const [steps, setSteps] = useState<{ task_id: number; done: boolean }[]>([]);
+  const [steps, setSteps] = useState<ChecklistItem[]>([]);
   const [follows, setFollows] = useState<TaskFollow[]>([]);
   const [posted, setPosted] = useState<Set<string>>(new Set());
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -94,8 +101,8 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const isLead = fullView || myRole === 'senior';
 
   const refreshChecklist = useCallback(async () => {
-    const { data } = await supabase.from('task_checklist').select('task_id,done').eq('department_id', deptId);
-    if (data) setSteps(data as { task_id: number; done: boolean }[]);
+    const { data } = await supabase.from('task_checklist').select('*').eq('department_id', deptId);
+    if (data) setSteps(data as ChecklistItem[]);
   }, [deptId]);
 
   const refresh = useCallback(async () => {
@@ -190,6 +197,23 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return m;
   }, [steps]);
   const progressOf = useCallback((id: number) => progress.get(id) ?? null, [progress]);
+
+  // project stages
+  const taskMap = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks]);
+  const stagesOf = useCallback((id: number) => steps.filter(s => s.task_id === id)
+    .sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999') || a.position - b.position || a.id - b.id), [steps]);
+  const stageOwner = useCallback((s: ChecklistItem) => s.assignee_id ?? taskMap.get(s.task_id)?.assignee_id, [taskMap]);
+  const myStages = useMemo(() => steps.filter(s => {
+    const t = taskMap.get(s.task_id);
+    return !!t && t.nature === 'project' && t.status !== 'done' && t.status !== 'review' && !s.done
+      && (s.assignee_id ?? t.assignee_id) === me.id;
+  }).sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999') || a.id - b.id), [steps, taskMap, me.id]);
+  const toggleStage = useCallback(async (s: ChecklistItem) => {
+    setSteps(xs => xs.map(x => (x.id === s.id ? { ...x, done: !s.done } : x)));
+    const { data, error } = await supabase.from('task_checklist').update({ done: !s.done }).eq('id', s.id).select().maybeSingle();
+    if (error || !data) { fail(error ?? new Error('You can only tick your own stages.')); refreshChecklist(); return; }
+    setSteps(xs => xs.map(x => (x.id === s.id ? data as ChecklistItem : x)));
+  }, [fail, refreshChecklist]);
 
   const createTask = useCallback(async (d: TaskDraft) => {
     const { data, error } = await supabase.from('tasks').insert(d).select().single();
@@ -321,6 +345,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper,
     progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack, inInbox, inbox, marks, setMark,
     updatePosted, updateDue, postUpdate, contacts, contactOf, saveContact, removeContact,
+    stagesOf, stageOwner, myStages, toggleStage,
     drawer,
     openTask: (id) => setDrawer({ mode: 'edit', id }),
     newTask: (defaults = {}) => setDrawer({ mode: 'new', defaults }),

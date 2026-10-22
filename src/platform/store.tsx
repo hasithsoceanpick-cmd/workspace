@@ -66,8 +66,9 @@ export function PlatformProvider({ me: initialMe, isAdmin, children }: { me: Pro
   const fail = useCallback((e: unknown) => toast(niceError(e), 'error'), [toast]);
 
   const refreshNotices = useCallback(async () => {
+    // one-to-one messages are counted on the chat button, not in the bell (mentions and announcements are)
     const { data } = await supabase.from('notifications').select('*')
-      .eq('user_id', initialMe.id).order('created_at', { ascending: false }).limit(60);
+      .eq('user_id', initialMe.id).neq('kind', 'message').order('created_at', { ascending: false }).limit(60);
     if (data) setNotices(data as Notice[]);
   }, [initialMe.id]);
 

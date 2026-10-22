@@ -10,6 +10,7 @@ import Avatar from '../../../platform/Avatar';
 import AssignedBy from '../AssignedBy';
 import OutsideWith from '../OutsideWith';
 import MiniTasks from '../MiniTasks';
+import StageRow from '../StageRow';
 
 // Timeline runs 07:00 – 20:30, in 30-minute rows, snapping to 15 minutes.
 const START = 7 * 60;
@@ -31,7 +32,7 @@ const prioRank = { high: 0, normal: 1, low: 2 } as const;
 type Drag = { id: number; mode: 'move' | 'resize'; offset: number; x: number; y: number; moved: boolean };
 
 export default function TodayPage({ params }: { params: Params }) {
-  const { me, inDept, isLead, team, tasks, person, openTask, helpersOf, fail, dept, inInbox, updateDue } = useTaskApp();
+  const { me, inDept, isLead, team, tasks, person, openTask, helpersOf, fail, dept, inInbox, updateDue, myStages } = useTaskApp();
   const td = today();
   const d = params.d || td;
   const who = isLead && params.who && team.some(p => p.id === params.who) ? params.who
@@ -305,6 +306,12 @@ export default function TodayPage({ params }: { params: Params }) {
             <section className="plan-group">
               <h3 className="accent">{d === td ? 'Due today' : 'Due this day'} <span className="count">{dueList.length}</span></h3>
               {dueList.map(planItem)}
+            </section>
+          )}
+          {mine && myStages.some(s => s.due_date && s.due_date <= d) && (
+            <section className="plan-group">
+              <h3 className="accent">Project stages <span className="count">{myStages.filter(s => s.due_date && s.due_date <= d).length}</span></h3>
+              <div className="list compact">{myStages.filter(s => s.due_date && s.due_date <= d).map(s => <StageRow key={s.id} s={s} />)}</div>
             </section>
           )}
           {plannedList.length > 0 && (

@@ -11,6 +11,7 @@ import OutsideWith from './OutsideWith';
 
 export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
   const { openTask, updateTask, person, me, toast, helpersOf, helperOnly, progressOf, canCheck, checkerOf, marks, updateDue, updatePosted } = useTaskApp();
+  const project = t.nature === 'project';
   const helping = helperOnly(t);
   const helpers = helpersOf(t.id);
   const prog = progressOf(t.id);
@@ -46,6 +47,10 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
         <div className="tr-title">{t.title}</div>
         <div className="tr-meta">
           {marks(t.id).pinned && <span className="pin-star" title="Pinned">★</span>}
+          {project && <span className="pill project" title="A project: one big task with dated stages">◆ Project</span>}
+          {project && t.health && t.health !== 'on_track' && !finished(t) && (
+            <span className={`pill health ${t.health}`} title={t.health_note}>{t.health === 'at_risk' ? 'At risk' : 'Off track'}</span>
+          )}
           {isNew && <span className="pill new" title="Someone gave you this — open it and press Got it">New</span>}
           {t.escalated_at && !finished(t) && <span className="pill esc" title="3+ days past its deadline: the manager has been told">Escalated</span>}
           {review && <span className="pill s-review">{canCheck(t) ? 'Sign off' : 'Waiting for sign-off'}</span>}
@@ -53,7 +58,7 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
           {t.priority === 'high' && <span className="pill high">High</span>}
           {(t.status === 'doing' || t.status === 'waiting') && <span className={`pill s-${t.status}`}>{statusLabel(t.status)}</span>}
           {t.priority === 'low' && <span className="pill low">Low</span>}
-          {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`} title="Checklist">☑ {prog.done}/{prog.total}</span>}
+          {prog && <span className={`pill prog ${prog.done === prog.total ? 'full' : ''}`} title={project ? 'Stages done' : 'Checklist'}>{project ? '◆' : '☑'} {prog.done}/{prog.total}</span>}
           {helping && <span className="pill helping">Helping</span>}
           {t.daily_update && !finished(t) && (updateDue(t)
             ? <span className="pill update-due" title={t.assignee_id === me.id ? "Write today's daily update in the task" : "Today's daily update isn't in yet"}>Update due</span>

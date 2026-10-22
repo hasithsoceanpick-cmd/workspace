@@ -1,5 +1,7 @@
 export type Status = 'todo' | 'doing' | 'waiting' | 'review' | 'done';
 export type Priority = 'low' | 'normal' | 'high';
+export type Nature = 'task' | 'project';
+export type Health = 'on_track' | 'at_risk' | 'off_track';
 export type Repeat = 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
 export interface Task {
@@ -44,6 +46,13 @@ export interface Task {
   daily_update_from: string | null;
   /** given to someone outside the app (no login); the owner follows up */
   contact_id: number | null;
+  /** a project is one big task with dated stages (checklist steps with a date and a person) */
+  nature: Nature;
+  /** project status flag, set by the owner (or whoever gave it / a manager) */
+  health: Health | null;
+  health_note: string;
+  health_at: string | null;
+  health_by: string | null;
 }
 
 /** Someone without a login that work is given to — a bank officer, a supplier — for follow-up */
@@ -110,7 +119,7 @@ export interface TaskActivity {
   department_id: string;
   actor_id: string | null;
   kind: 'created' | 'status' | 'due_date' | 'assignee' | 'edited' | 'comment' | 'helper_added' | 'helper_removed' | 'step' | 'repeated'
-    | 'sent_back' | 'acknowledged' | 'daily_update';
+    | 'sent_back' | 'acknowledged' | 'daily_update' | 'health';
   old_value: string | null;
   new_value: string | null;
   created_at: string;
@@ -129,6 +138,9 @@ export interface TaskDraft {
   acknowledged_at?: string | null;
   daily_update?: boolean;
   contact_id?: number | null;
+  nature?: Nature;
+  health?: Health | null;
+  health_note?: string;
 }
 
 export interface TaskHelper {
@@ -150,6 +162,9 @@ export interface ChecklistItem {
   done_by: string | null;
   done_at: string | null;
   created_at: string;
+  /** project stages: the date, and who does it (empty = the project owner) */
+  due_date: string | null;
+  assignee_id: string | null;
 }
 
 export interface TaskAttachment {
@@ -175,6 +190,8 @@ export interface MiniTask {
   body: string;
   done_at: string | null;
   created_at: string;
+  /** given by someone else (empty or the person themselves = their own) */
+  created_by: string | null;
 }
 
 export interface TimeBlock {

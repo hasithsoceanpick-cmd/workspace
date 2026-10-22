@@ -2,7 +2,7 @@ import { supabase } from '../../supabase';
 import { downloadXlsx, xDate, type XSheet } from '../../platform/excel';
 import { today } from '../../lib/dates';
 import type { Profile } from '../../platform/types';
-import { finished, isLate, remindLabel, repeatLabel, statusLabel } from './labels';
+import { finished, healthLabel, isLate, remindLabel, repeatLabel, statusLabel } from './labels';
 import type { Task, TaskActivity } from './types';
 
 /**
@@ -33,7 +33,7 @@ export async function exportTasks(opts: {
       { header: 'Overdue days', width: 13 }, { header: 'Repeats', width: 11 }, { header: 'Checklist', width: 10 },
       { header: 'Assigned by', width: 20 }, { header: 'Created', width: 13 }, { header: 'Finished', width: 13 },
       { header: 'Signed off by', width: 18 }, { header: 'Times sent back', width: 14 }, { header: 'Early reminder', width: 15 },
-      { header: 'Notes', width: 50 },
+      { header: 'Notes', width: 50 }, { header: 'Type', width: 9 }, { header: 'Project status', width: 14 },
     ],
     rows: sorted.map(t => {
       const p = progressOf(t.id);
@@ -44,7 +44,8 @@ export async function exportTasks(opts: {
         t.priority[0].toUpperCase() + t.priority.slice(1), xDate(t.due_date), xDate(t.original_due ?? t.due_date),
         t.due_moves ?? 0, late, repeatLabel(t.repeat), p ? `${p.done}/${p.total}` : '', name(t.created_by),
         xDate(t.created_at), xDate(t.submitted_at ?? t.completed_at), name(t.checked_by), t.sent_back_n || null,
-        remindLabel(t.remind_days), t.notes,
+        remindLabel(t.remind_days), t.notes, t.nature === 'project' ? 'Project' : 'Task',
+        t.nature === 'project' && t.health ? healthLabel(t.health) : '',
       ];
     }),
   };

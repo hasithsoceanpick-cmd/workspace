@@ -1,4 +1,4 @@
-import type { Priority, Repeat, Status } from './types';
+import type { Health, Priority, Repeat, Status } from './types';
 
 /** What people can pick. "Waiting for sign-off" is reached by marking a task Done (see 02_app_tasks.sql). */
 export const STATUSES: { value: Status; label: string }[] = [
@@ -39,6 +39,13 @@ export const REPEATS: { value: Repeat; label: string; short: string }[] = [
 export const repeatLabel = (r: string | null | undefined) => REPEATS.find(x => x.value === r)?.short ?? '';
 /** Every day / weekdays: a new one appears each morning even if the last one is still open */
 export const isDaily = (r: string | null | undefined) => r === 'daily' || r === 'weekdays';
+
+export const HEALTHS: { value: Health; label: string }[] = [
+  { value: 'on_track', label: 'On track' },
+  { value: 'at_risk', label: 'At risk' },
+  { value: 'off_track', label: 'Off track' },
+];
+export const healthLabel = (h: string | null | undefined) => HEALTHS.find(x => x.value === h)?.label ?? 'No status yet';
 
 export const PRIORITIES: { value: Priority; label: string }[] = [
   { value: 'high', label: 'High' },

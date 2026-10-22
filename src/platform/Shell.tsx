@@ -18,8 +18,10 @@ export default function Shell() {
   const route = useRoute();
 
   const available: AppDef[] = APPS.filter(a => myAppKeys.includes(a.key));
+  // where the site opens: the first app in the menu (Messages is opened from its own button)
+  const home = available.find(a => a.inMenu !== false) ?? available[0];
   const wantsAdmin = route.app === 'admin' && isAdmin;
-  const current: AppDef | undefined = wantsAdmin ? ADMIN_APP : available.find(a => a.key === route.app) ?? available[0];
+  const current: AppDef | undefined = wantsAdmin ? ADMIN_APP : available.find(a => a.key === route.app) ?? home;
   const pending = isAdmin ? profiles.filter(p => !p.active || !p.department_id).length : 0;
 
   // keep the URL pointing at a real app
@@ -40,7 +42,7 @@ export default function Shell() {
         : { data: null };
       if (stop) return;
       if (data) openNotice(data as Notice);
-      else go(available[0]?.key ?? (isAdmin ? 'admin' : ''));
+      else go(home?.key ?? (isAdmin ? 'admin' : ''));
     })();
     return () => { stop = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -50,7 +52,7 @@ export default function Shell() {
   useEffect(() => { refreshPush(); }, []);
 
   const appItems = [
-    ...available.map(a => ({
+    ...available.filter(a => a.inMenu !== false).map(a => ({
       key: a.key,
       label: a.name,
       hint: apps.find(x => x.key === a.key)?.description,
@@ -77,7 +79,7 @@ export default function Shell() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand" onClick={() => go(available[0]?.key ?? (isAdmin ? 'admin' : ''))}>
+        <div className="brand" onClick={() => go(home?.key ?? (isAdmin ? 'admin' : ''))}>
           <span className="brand-mark">✓</span>
           <span className="brand-name">{PLATFORM_NAME}</span>
         </div>

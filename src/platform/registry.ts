@@ -23,6 +23,8 @@ export interface AppDef {
   kindPages?: Record<string, string>;
   /** extra address parameters for a notification (e.g. which day a summary is about) */
   noticeParams?: (n: Notice) => Record<string, string>;
+  /** false = not listed in the Apps menu (opened another way, e.g. Messages from its top-bar button) */
+  inMenu?: boolean;
 }
 
 /**
@@ -35,12 +37,14 @@ export interface AppDef {
 export const APPS: AppDef[] = [
   {
     key: 'tasks', name: 'Tasks', component: TasksApp, refParam: 'task', defaultOn: true,
-    kindPages: { weekly: 'week', reminder: 'reminders', update_due: 'output', output_summary: 'output' },
+    kindPages: { weekly: 'week', reminder: 'reminders', update_due: 'output', output_summary: 'output', mini: '' },
     // the morning summary is about the last weekday before the day it was sent
     noticeParams: (n): Record<string, string> => n.kind === 'output_summary' ? { d: prevWorkday(localDayOf(n.created_at)) } : {},
   },
   // the editor is large, so Notes only downloads when someone opens it
   { key: 'notes', name: 'Notes', component: lazy(() => import('../apps/notes')), refParam: 'note' },
+  // opened from the chat button in the top bar (TOP_BAR in slots.ts)
+  { key: 'messages', name: 'Messages', component: lazy(() => import('../apps/messages')), refParam: 'thread', defaultOn: true, inMenu: false },
 ];
 
 /** Only the platform admin ever sees this one. */
