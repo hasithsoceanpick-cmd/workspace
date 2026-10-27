@@ -104,6 +104,19 @@ export interface TaskComment {
 }
 
 /** A line of work done outside the app, on the My output page */
+/** One focus slot of the focus timer (Pomodoro), recorded when it ended */
+export interface FocusSession {
+  id: number;
+  department_id: string;
+  user_id: string;
+  task_id: number | null;
+  started_at: string;
+  ended_at: string;
+  planned_min: number;
+  minutes: number;
+  completed: boolean;
+}
+
 export interface WorkLog {
   id: number;
   department_id: string;

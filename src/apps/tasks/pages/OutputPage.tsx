@@ -7,13 +7,14 @@ import { firstName } from '../../../lib/labels';
 import { finished, finishedAt } from '../labels';
 import AssignedBy from '../AssignedBy';
 import OutsideWith from '../OutsideWith';
-import type { MiniTask, Task, TaskComment, WorkLog } from '../types';
+import type { FocusSession, MiniTask, Task, TaskComment, WorkLog } from '../types';
 
 type Step = { id: number; task_id: number; body: string; done_at: string };
+const hm = (min: number) => (min >= 60 ? `${Math.floor(min / 60)}h${min % 60 ? ` ${min % 60}m` : ''}` : `${min}m`);
 
 /**
  * My output: what someone did on one day — tasks finished, daily updates, ticked mini tasks and checklist steps,
- * and work done outside the app (free-text lines, today only). Managers see their department, senior executives
+ * work done outside the app (free-text lines, today only) and focus-timer sessions. Managers see their department, senior executives
  * their members (the database decides: task_sees_work_of).
  */
 export default function OutputPage({ params }: { params: Params }) {
@@ -28,27 +29,42 @@ export default function OutputPage({ params }: { params: Params }) {
   const [minis, setMinis] = useState<MiniTask[]>([]);
   const [steps, setSteps] = useState<Step[]>([]);
   const [lines, setLines] = useState<WorkLog[]>([]);
+  const [focusRows, setFocusRows] = useState<FocusSession[]>([]);
   const [text, setText] = useState('');
   const [editing, setEditing] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const [from, to] = dayBounds(d);
-    const [u, m, s, w] = await Promise.all([
+    const [u, m, s, w, f] = await Promise.all([
       supabase.from('task_comments').select('*').eq('author_id', who).eq('daily_for', d).order('created_at'),
       supabase.from('task_minis').select('*').eq('user_id', who).eq('department_id', dept!.id)
         .gte('done_at', from).lt('done_at', to).order('done_at'),
       supabase.from('task_checklist').select('id,task_id,body,done_at').eq('department_id', dept!.id).eq('done_by', who)
         .gte('done_at', from).lt('done_at', to).order('done_at'),
       supabase.from('task_work_log').select('*').eq('user_id', who).eq('department_id', dept!.id).eq('day', d).order('created_at').order('id'),
+      supabase.from('task_focus').select('*').eq('user_id', who).eq('department_id', dept!.id)
+        .gte('started_at', from).lt('started_at', to).order('started_at'),
     ]);
-    const err = u.error ?? m.error ?? s.error ?? w.error;
+    const err = u.error ?? m.error ?? s.error ?? w.error ?? f.error;
     if (err) return fail(err);
     setUpdates((u.data ?? []) as TaskComment[]);
     setMinis((m.data ?? []) as MiniTask[]);
     setSteps((s.data ?? []) as Step[]);
     setLines((w.data ?? []) as WorkLog[]);
+    setFocusRows((f.data ?? []) as FocusSession[]);
   }, [d, who, dept, fail]);
   useEffect(() => { setUpdates(null); load(); }, [load, tasks]);
+  // a focus slot just ended (top-bar timer)
+  useEffect(() => {
+    const again = () => load();
+    window.addEventListener('workspace:focus', again);
+    return () => window.removeEventListener('workspace:focus', again);
+  }, [load]);
+  async function removeFocus(f: FocusSession) {
+    setFocusRows(xs => xs.filter(x => x.id !== f.id));
+    const { error } = await supabase.from('task_focus').delete().eq('id', f.id);
+    if (error) { fail(error); load(); }
+  }
 
   const taskById = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks]);
   const done = useMemo(() => tasks
@@ -85,7 +101,10 @@ export default function OutputPage({ params }: { params: Params }) {
     const late = daysBetween(t.due_date, d);
     return late > 0 ? <span className="danger">{late}d late</span> : t.due_date > d ? <span className="good">early</span> : <span className="good">on time</span>;
   };
-  const total = done.length + (updates?.length ?? 0) + minis.length + steps.length + lines.length;
+  const total = done.length + (updates?.length ?? 0) + minis.length + steps.length + lines.length + focusRows.length;
+  const focusMin = focusRows.reduce((a, f) => a + f.minutes, 0);
+  const byTask = [...focusRows.reduce((m, f) => m.set(f.task_id ?? 0, (m.get(f.task_id ?? 0) ?? 0) + f.minutes), new Map<number, number>())]
+    .sort((a, b) => b[1] - a[1]);
   const name = owner ? firstName(owner.full_name) : 'They';
 
   return (
@@ -132,6 +151,7 @@ export default function OutputPage({ params }: { params: Params }) {
         <div className="out-tile"><span className="n">{updates?.length ?? 0}</span><span>daily updates</span></div>
         <div className="out-tile"><span className="n">{minis.length + steps.length}</span><span>mini tasks &amp; steps</span></div>
         <div className="out-tile"><span className="n">{lines.length}</span><span>other work</span></div>
+        <div className="out-tile focus"><span className="n">{focusMin ? hm(focusMin) : '0'}</span><span>focus time</span></div>
       </div>
 
       <section className="out-section">
@@ -192,6 +212,34 @@ export default function OutputPage({ params }: { params: Params }) {
                 </li>
               ))}
           </ul>
+        )}
+      </section>
+
+      <section className="out-section">
+        <h2>Focus time</h2>
+        <div className="muted tiny">From the 🍅 focus timer in the top bar.{mine && d === td && focusRows.length === 0 ? ' Start one there — finished and stopped-early slots show here.' : ''}</div>
+        {focusRows.length === 0 ? <div className="muted small">None.</div> : (
+          <>
+            <div className="out-focus-sum">
+              <strong>{focusRows.length} {focusRows.length === 1 ? 'session' : 'sessions'} · {hm(focusMin)}</strong>
+              {byTask.map(([id, min]) => (
+                <span key={id} className="pill">{id ? titleOf(id) : 'No particular task'} · {hm(min)}</span>
+              ))}
+            </div>
+            <ul className="out-list">
+              {focusRows.map(f => (
+                <li key={f.id}>
+                  <div className={`out-row ${f.task_id ? 'link' : ''}`} onClick={() => f.task_id && openTask(f.task_id)}>
+                    <span className="out-time span">{fmtTime(f.started_at)}–{fmtTime(f.ended_at)}</span>
+                    <span className="grow"><span className="out-title">{f.task_id ? titleOf(f.task_id) : 'No particular task'}</span></span>
+                    <span className="small">{f.minutes} min</span>
+                    {!f.completed && <span className="pill" title={`Planned ${f.planned_min} min`}>stopped early</span>}
+                    {mine && d === td && <button className="mini-act x" onClick={ev => { ev.stopPropagation(); removeFocus(f); }} aria-label="Remove this focus session">✕</button>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 

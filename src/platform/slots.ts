@@ -4,6 +4,7 @@ import LinkedNotesPanel from '../apps/notes/LinkedNotesPanel';
 import { tasksSearch } from '../apps/tasks/search';
 import { notesSearch } from '../apps/notes/search';
 import ReminderButton from '../apps/tasks/ReminderButton';
+import FocusButton from '../apps/tasks/FocusButton';
 import DailyUpdateGate from '../apps/tasks/DailyUpdateGate';
 import ChatButton from '../apps/messages/ChatButton';
 import { messagesSearch } from '../apps/messages/search';
@@ -14,7 +15,7 @@ import { messagesSearch } from '../apps/messages/search';
  *
  *   taskPanel – a section inside the Tasks app's task details panel
  *   search    – results in the Ctrl+K search box (each app searches its own data, with the person's own rights)
- *   topBar    – a small button in the top bar (e.g. quick reminders), next to search and the bell
+ *   topBar    – a small button in the top bar (focus timer, quick reminders, chat), next to search and the bell
  *   gates     – a screen that must be dealt with before anything else (e.g. yesterday's daily updates)
  *   message*  – work inside the Messages app: cards for tasks / notes / reminders / mini tasks, pickers to attach
  *               them, and forms that make new work from a message (loaded only when Messages is opened)
@@ -42,6 +43,7 @@ export const SEARCH: SearchProvider[] = [tasksSearch, notesSearch, messagesSearc
 
 /** Buttons in the top bar. Only shown for people who have that app in the department being viewed. */
 export const TOP_BAR: { app: string; component: ComponentType }[] = [
+  { app: 'tasks', component: FocusButton },
   { app: 'tasks', component: ReminderButton },
   { app: 'messages', component: ChatButton },
 ];

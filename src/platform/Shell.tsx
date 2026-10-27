@@ -100,7 +100,7 @@ export default function Shell() {
 
         <div className="topbar-right">
           {dept && !wantsAdmin && <Search />}
-          {dept && !wantsAdmin && TOP_BAR.filter(t => myAppKeys.includes(t.app)).map(t => <t.component key={t.app} />)}
+          {dept && !wantsAdmin && TOP_BAR.filter(t => myAppKeys.includes(t.app)).map((t, i) => <t.component key={`${t.app}-${i}`} />)}
           <Bell />
           <UserMenu />
         </div>
