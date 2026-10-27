@@ -67,7 +67,9 @@ async def main():
         await h.screenshot(path=f'{OUT}/c1_week.png')
 
         await h.goto(BASE + '/#/tasks/calendar'); await h.wait_for_timeout(700)
-        await h.locator('.mcell').nth(20).click(); await h.wait_for_selector('.drawer')
+        # an empty day in the month (clicking a day with tasks on it might land on one of them)
+        empty = [i for i in range(14, 35) if await h.locator('.mcell').nth(i).locator('.chip').count() == 0][0]
+        await h.locator('.mcell').nth(empty).click(); await h.wait_for_selector('.drawer')
         await h.fill('.title-input', 'Quarter-end stock count')
         await h.locator('.drawer select').first.select_option(label='Amaya Fernando')
         await h.click('button:has-text("Create task")'); await h.wait_for_timeout(700)

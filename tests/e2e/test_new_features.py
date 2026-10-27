@@ -52,6 +52,9 @@ async def main():
         check(await k.locator('h1').first.inner_text() == 'Today', 'Today heading')
         hours = await k.locator('.tl-hour').all_inner_texts()
         check(hours[0] == '07:00' and hours[-1] == '20:30', f'timeline runs 07:00–20:30 ({hours[0]}…{hours[-1]})')
+        check(await k.locator('.plan-item:has-text("Bank reconciliation")').count() == 0 and await k.locator('.late-toggle').count() == 1,
+              'overdue work is folded into one short line on Today')
+        await k.click('.late-toggle'); await k.wait_for_timeout(200)
         check(await k.locator('.plan-item:has-text("Bank reconciliation")').count() == 1, 'own open tasks listed to plan')
         await k.evaluate("document.querySelector('.timeline-wrap').scrollTop = 0")
         await k.wait_for_timeout(200)
@@ -128,6 +131,7 @@ async def main():
         await a.click('.bell .icon-btn'); await a.wait_for_timeout(300)
         check('added you as a helper on "Bank reconciliation' in await a.locator('.bell-pop').inner_text(), 'helper is notified')
         await a.keyboard.press('Escape'); await a.mouse.click(10, 500)
+        if await a.locator('.late-toggle[aria-expanded="false"]').count(): await a.click('.late-toggle')
         check(await a.locator('.plan-item:has-text("Bank reconciliation")').count() == 1 and 'helping' in await a.locator('.plan-item:has-text("Bank reconciliation")').inner_text(), 'helper can plan it on Today ("helping Kasun")')
         await a.goto(BASE + '/#/tasks/list'); await a.wait_for_timeout(900)
         check(await a.locator('.helping-group .task-row:has-text("Bank reconciliation")').count() == 1, '"Helping on" group lists it')

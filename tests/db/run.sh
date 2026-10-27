@@ -9,9 +9,14 @@ export PGOPTIONS="${PGOPTIONS:--c client_min_messages=warning}"   # hide "does n
 psql "$URL" -q -v ON_ERROR_STOP=1 -f tests/db/mock_supabase.sql
 # like the live project: a table left by an older app that Workspace must never touch
 psql "$URL" -q -v ON_ERROR_STOP=1 -c "create table if not exists public.notes (id uuid primary key default gen_random_uuid(), title text);
-  insert into public.notes (title) select 'older app' where not exists (select 1 from public.notes);"
-for f in supabase/01_platform.sql supabase/02_app_tasks.sql supabase/03_feature_daily_notes.sql supabase/05_app_notes.sql supabase/06_feature_month_end.sql supabase/07_push.sql supabase/08_feature_compliance.sql; do
+  insert into public.notes (title) select 'older app' where not exists (select 1 from public.notes);
+  create table if not exists public.conversations (id uuid primary key default gen_random_uuid(), name text);
+  create table if not exists public.messages (id uuid primary key default gen_random_uuid(), conversation_id uuid, body text);
+  create table if not exists public.conversation_members (conversation_id uuid, user_id uuid);
+  create table if not exists public.chat_reads (conversation_id uuid, user_id uuid, read_at timestamptz);
+  insert into public.messages (body) select 'older app' where not exists (select 1 from public.messages);"
+for f in supabase/01_platform.sql supabase/02_app_tasks.sql supabase/03_feature_daily_notes.sql supabase/05_app_notes.sql supabase/06_feature_month_end.sql supabase/07_push.sql supabase/08_feature_compliance.sql supabase/09_app_messages.sql; do
   psql "$URL" -q -v ON_ERROR_STOP=1 -f "$f" > /dev/null
 done
 DATABASE_URL="$URL" node tests/db/isolation.test.mjs && DATABASE_URL="$URL" node tests/db/features.test.mjs \
-  && DATABASE_URL="$URL" node tests/db/round3.test.mjs && DATABASE_URL="$URL" node tests/db/round5.test.mjs && DATABASE_URL="$URL" node tests/db/round6.test.mjs
+  && DATABASE_URL="$URL" node tests/db/round3.test.mjs && DATABASE_URL="$URL" node tests/db/round5.test.mjs && DATABASE_URL="$URL" node tests/db/round6.test.mjs && DATABASE_URL="$URL" node tests/db/round7.test.mjs && DATABASE_URL="$URL" node tests/db/round8.test.mjs && DATABASE_URL="$URL" node tests/db/round9.test.mjs && DATABASE_URL="$URL" node tests/db/round10.test.mjs && DATABASE_URL="$URL" node tests/db/round11.test.mjs && DATABASE_URL="$URL" node tests/db/round12.test.mjs

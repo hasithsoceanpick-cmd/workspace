@@ -7,7 +7,7 @@ ever runs the newest one. It is made of:
   - the ensure_profile part of 01_platform.sql (between the  -- >>> / -- <<<  markers)
   - 02_app_tasks.sql (whole file)
   - the notes_search part of 05_app_notes.sql
-  - 06_feature_month_end.sql, 07_push.sql, 08_feature_compliance.sql (whole files)
+  - 06_feature_month_end.sql, 07_push.sql, 08_feature_compliance.sql, 09_app_messages.sql (whole files)
 All of these are re-runnable, and none touches tables other apps created.
 If a new round changes another file, add it (or a marked part of it) to PARTS below.
 """
@@ -30,6 +30,7 @@ PARTS = [
     ('', part('06_feature_month_end.sql')),
     ('', part('07_push.sql')),
     ('', part('08_feature_compliance.sql')),
+    ('', part('09_app_messages.sql')),
 ]
 
 def main():
@@ -43,7 +44,7 @@ def main():
 --  (Built by tools/compose_update.py from the ensure_profile part of
 --   01_platform.sql + 02_app_tasks.sql + the notes_search part of
 --   05_app_notes.sql + 06_feature_month_end.sql + 07_push.sql
---   + 08_feature_compliance.sql.)
+--   + 08_feature_compliance.sql + 09_app_messages.sql.)
 --  Nothing here touches tables or rules that other apps created.
 -- =====================================================================
 

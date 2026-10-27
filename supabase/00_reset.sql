@@ -1,7 +1,7 @@
 -- =====================================================================
 --  WORKSPACE — clean slate (only if an earlier setup attempt is in the way)
 --  Removes every table, rule and scheduled job this app (or the earlier
---  "Team Tasks" version) created, so 01–08 can run fresh. Tables from other
+--  "Team Tasks" version) created, so 01–09 can run fresh. Tables from other
 --  apps (for example an older "notes" table) are left alone.
 --  ⚠ Deletes all app data in this project. Use it on a new project only.
 -- =====================================================================
@@ -9,7 +9,8 @@
 drop trigger if exists on_auth_user_created on auth.users;
 
 drop table if exists
-  public.task_reminders, public.task_follows,
+  public.msg_acks, public.msg_reads, public.msg_files, public.msg_items, public.msg_messages, public.msg_threads,
+  public.task_focus, public.task_focus_settings, public.task_work_log, public.task_minis, public.task_contacts, public.task_reminders, public.task_follows,
   public.compliance_items, public.workspace_push_log, public.workspace_push_config, public.workspace_push_subscriptions,
   public.month_end_entries, public.month_end_periods, public.month_end_items,
   public.notes_task_links, public.notes_files, public.notes_shares, public.notes_pages,
@@ -46,7 +47,12 @@ begin
       'workspace_push_setup','workspace_push_enable','workspace_push_status','workspace_push_test','workspace_push_result',
       'compliance_on','compliance_lead','compliance_items_before','compliance_add',
       'task_visible_to','task_follows_before','task_follower_ids','task_reminder_next','task_reminders_before',
-      'task_reminders_due'])
+      'task_reminders_due','task_repeat_sched','task_repeat_day','task_repeat_next_due','task_repeat_spawn',
+      'task_minis_before','task_prev_workday','task_update_required','task_comments_before','task_sees_work_of',
+      'task_work_log_before','task_output_counts','tasks_updates_owed','run_update_reminder','task_output_summary','task_contacts_before',
+      'task_stage_rules','task_stage_after','task_minis_after','task_focus_before','task_focus_save',
+      'msg_can_see','msg_can_post','msg_members','msg_file_ok','msg_shared','msg_direct','msg_messages_before',
+      'msg_messages_after','msg_children_before','msg_sync','msg_seen','msg_search'])
   loop
     execute 'drop function if exists ' || r.sig || ' cascade';
   end loop;
@@ -59,6 +65,9 @@ begin
     drop policy if exists "notes files: read" on storage.objects;
     drop policy if exists "notes files: upload" on storage.objects;
     drop policy if exists "notes files: delete" on storage.objects;
+    drop policy if exists "msg files: read" on storage.objects;
+    drop policy if exists "msg files: upload" on storage.objects;
+    drop policy if exists "msg files: delete" on storage.objects;
   end if;
 
   -- old scheduled jobs, if Cron was set up before

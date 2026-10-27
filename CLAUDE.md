@@ -10,13 +10,17 @@ made so far, and how to ship changes to Hasith (who doesn't code).
 ```
 src/platform/      shared shell: sign-in, app dropdown, admin-only department switcher,
                    notifications bell, user menu. Knows nothing about any department.
-src/apps/<key>/    one folder per app (today: tasks, notes, admin). Default export = the app.
+src/apps/<key>/    one folder per app (today: tasks, notes, messages, admin). Default export = the app.
 src/platform/slots.ts  places where one app shows a panel inside another (e.g. Notes inside a task).
 src/platform/files.ts  upload / open / delete files in the private "workspace-files" bucket.
 src/platform/excel.ts  plain Excel downloads (bold frozen header, real dates, no formulas) for any app.
 src/platform/pwa.ts, push.ts, public/sw.js  installing as an app, and phone alerts on this device.
 src/platform/Search.tsx  Ctrl+K search; each app adds a provider to SEARCH in slots.ts.
-src/platform/slots.ts also has TOP_BAR: small buttons an app puts in the top bar (Tasks: quick reminders).
+src/platform/slots.ts also has TOP_BAR: small buttons an app puts in the top bar (Tasks: focus timer, quick reminders;
+                   Messages: the chat button), and GATES:
+                   screens that must be dealt with before anything else (Tasks: yesterday's daily updates), and
+                   MESSAGE_CARDS / MESSAGE_ATTACH / MESSAGE_WORK: tasks, notes, reminders and mini tasks inside
+                   messages (cards, "Attach", "Send as" / "Make it a …"), lazy-loaded so they cost the main bundle nothing.
 src/features/<key>/ department-only features. Registered in src/features/registry.ts.
 supabase/          numbered SQL files, run in order in the Supabase SQL Editor.
 supabase/functions/workspace-push/  the Edge Function that delivers phone alerts (pasted into the dashboard).
@@ -102,6 +106,51 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
    isn't the owner's open workload. When the owner finished is `submitted_at` (falls back to `completed_at`).
 19. **"New" work:** a task someone else gave me that I haven't acknowledged (`inInbox(t)` in the Tasks store) appears
    only in the New tab — leave it out of my lists, Today and calendar. Other people's views are unaffected.
+20. **Per-person tables** (`task_reminders`, `task_minis`, `task_work_log`, `task_focus`) are the exception to rule 3: their policies
+   decide from the person, not the department alone. Reminders: only the person and whoever set it. Mini tasks: only the
+   person, except **ticked** ones, which their managers can read (`task_sees_work_of`). Other-work lines: the person and
+   whoever `task_sees_work_of` allows (managers: the department; seniors: members; the admin). The BEFORE trigger still
+   sets the department, and inserts still check the department and the Tasks app.
+21. **Daily updates** are `task_comments` rows with `daily_for` set (only the owner, only for today or the last weekday,
+   `created_at` always now — "written next morning" depends on it). Whether one is needed: `task_update_required(t, day)`.
+   The morning catch-up screen is `src/apps/tasks/DailyUpdateGate.tsx`, shown over every app through the platform slot
+   `GATES` (slots.ts); a gate must never lock anyone out because its own check failed.
+22. **Repeating tasks** are created only by `task_repeat_spawn(id, due, actor)` (02_app_tasks.sql) — on done in
+   `tasks_after`, and each morning in `run_deadline_check` for `daily` / `weekdays`. Use `task_repeat_next_due(t)` for
+   the next deadline; never insert occurrences elsewhere.
+23. **People outside the app** live in `task_contacts` (a shared list per department, no login) and are linked with
+   `tasks.contact_id`; the task's `assignee_id` is still an app user, who follows up. Never make profiles or logins for
+   them. A task's contact must be on its own department's list (checked in `tasks_before`). Taking someone off the list
+   is `active = false` (the FK is `on delete restrict`, so people on tasks can't be deleted).
+24. **Projects** are `tasks` with `nature = 'project'` (never repeating). Their stages are `task_checklist` rows with
+   `due_date` and `assignee_id` (empty = the project owner); `task_stage_rules` lets only whoever runs the project change
+   stages (and only give them to people they could give work to), and a stage person tick only their own;
+   `task_stage_after` adds the stage person as a helper (quietly, under `app.system`) and alerts them. Ordinary tasks'
+   steps never keep a date or person. Status flag: `health` / `health_note` (history = `task_activity` kind `health`).
+25. **Mini tasks given to someone** set `task_minis.created_by` (empty or the person = their own). Only people you could
+   give work to (`can_assign_task`); the giver sees and can change / take back theirs until ticked, never ticks them.
+
+26. **Messages** (09_app_messages.sql, src/apps/messages/) uses only `msg_*` names — the live project also has an older
+   chat app's `messages`, `conversations`, `conversation_members` and `chat_reads`; never touch those (09 stops itself if
+   it finds `msg_*` objects it didn't make). One-to-one chats (`kind = 'direct'`) are readable **only by the two people**
+   (not managers, not the admin — `msg_can_see`); team chat and announcements by the department's people with Messages and
+   the admin; only managers (and the admin) post announcements. Messages are never deleted: "delete" blanks the words
+   within 15 minutes (`msg_messages_before`), same window for edits. Ticks come from `msg_reads` (`msg_sync` = delivered,
+   `msg_seen` = seen, which also marks the conversation's bell alerts read). Alerts: direct → `message` (phone and chat
+   button, kept out of the bell list), team → `mention` only for @mentioned people, announcements → `announce` to everyone.
+   Work in a message is a `msg_items` row (`attached` / `sent` by the author, `made` by anyone in the chat) with a copy of
+   its title; opening it still needs the viewer's own rights in that app. Messages doesn't import Tasks or Notes — their
+   cards and forms come through the MESSAGE_* slots. It polls (5 s list / 4 s open chat); there is no realtime.
+
+27. **Focus timer (Pomodoro)** — `src/apps/tasks/focus.ts` + `FocusButton.tsx` (TOP_BAR). The running clock lives in the
+   browser (localStorage, shared by tabs; one 1-second tick); each focus slot becomes one `task_focus` row when it ends
+   (finished, or stopped / skipped after a minute; a slot that ended while the app was closed is recorded on the next
+   open). Rows are never updated; the person may delete today's. `task_focus_before` pins person and department, moves a
+   fast device clock back to "now", caps minutes at the time that passed, and checks the task is one they can see;
+   `client_start` (the device's start) is unique per person so two tabs record once. Readers: `task_sees_work_of`
+   (My output). Each person's lengths: `task_focus_settings` (own row only, saved with `task_focus_save`).
+   Reminders can be changed (words, date, time) by the person reminded **or whoever set them** (`ReminderEdit` in
+   Reminders.tsx); only the person reminded marks them done or snoozes.
 
 ## Adding a new app
 
@@ -111,6 +160,7 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
    Always filter queries by `.eq('department_id', dept.id)` (the admin can read all).
 3. Add it to `APPS` in `src/platform/registry.ts` (`refParam` = the URL parameter that opens one
    item from a notification; `defaultOn` only for apps every new department should get;
+   `inMenu: false` for an app opened another way, like Messages from its top-bar button;
    wrap large apps in `lazy(() => import(...))` so they download only when opened).
 4. Admin console → Departments & apps → switch it on (everyone or selected people).
 

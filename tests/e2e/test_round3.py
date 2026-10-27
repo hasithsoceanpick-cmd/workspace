@@ -93,7 +93,7 @@ async def main():
         n_tasks = int(sql("select count(*) from tasks t join departments d on d.id=t.department_id where d.name='Finance'"))
         check(ws.max_row - 1 == n_tasks and heads[:3] == ['Task #', 'Title', 'Owner'], f'every Finance task is exported ({ws.max_row - 1} of {n_tasks})')
         wht = [r for r in ws.iter_rows(min_row=2, values_only=True) if r[1] == 'WHT schedule for September'][0]
-        check(isinstance(wht[6], datetime.datetime) and wht[8] == 1, 'deadlines are real dates and moves are counted')
+        check(isinstance(wht[7], datetime.datetime) and wht[9] == 1, 'deadlines are real dates and moves are counted')
         check(ws.freeze_panes == 'A2', 'header row is frozen')
         mv = wb['Deadline moves']
         check(mv.max_row >= 2 and mv.cell(2, 2).value == 'WHT schedule for September', 'the moves sheet lists who moved what')
