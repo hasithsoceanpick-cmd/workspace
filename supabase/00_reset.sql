@@ -50,7 +50,7 @@ begin
       'task_reminders_due','task_repeat_sched','task_repeat_day','task_repeat_next_due','task_repeat_spawn',
       'task_minis_before','task_prev_workday','task_update_required','task_comments_before','task_sees_work_of',
       'task_work_log_before','task_output_counts','tasks_updates_owed','run_update_reminder','task_output_summary','task_contacts_before',
-      'task_stage_rules','task_stage_after','task_minis_after','task_focus_before','task_focus_save',
+      'task_stage_rules','task_stage_after','task_minis_after','task_focus_before','task_focus_save','task_due_text',
       'msg_can_see','msg_can_post','msg_members','msg_file_ok','msg_shared','msg_direct','msg_messages_before',
       'msg_messages_after','msg_children_before','msg_sync','msg_seen','msg_search'])
   loop

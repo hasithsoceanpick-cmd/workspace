@@ -152,6 +152,16 @@ tools/sql-page/    builds the copy-paste SQL page Hasith uses to run SQL in Supa
    Reminders can be changed (words, date, time) by the person reminded **or whoever set them** (`ReminderEdit` in
    Reminders.tsx); only the person reminded marks them done or snoozes.
 
+28. **Work given without a deadline** — `tasks.due_date` may be empty, but only while a one-off task given to someone
+   else (never your own, a project, a repeat or a finished one) waits for its owner's **Got it**: the owner must pick a
+   date to accept it (`tasks_before`), no later than `latest_by` if whoever gave it set one (only they or a manager
+   change `latest_by`; the owner's later moves stay within it too). Picking is the task's first deadline (`original_due`,
+   no move counted), logged as activity `date_set` and alerted as `date_set` to whoever gave it. In the app, `Task`
+   always has a date; `UndatedTask` / `AnyTask` / `hasDate` (types.ts) cover the rest, and the store keeps them apart
+   (`tasks` = dated, `undated`, `findTask`). Only the New tab, the lists' "No date yet" group, the Who's on what board
+   and table, the task panel and the Excel export handle undated work — everything else (Today, calendar, reports,
+   SQL checks) simply never sees it. Anything reading `tasks` straight from the database must allow a null date.
+
 ## Adding a new app
 
 1. Copy `supabase/templates/new_app.sql` → `supabase/0X_app_<key>.sql`, adapt, run it.

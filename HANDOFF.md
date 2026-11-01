@@ -87,6 +87,10 @@ as an app (PWA) and can send phone alerts (web push).
    Messages if U10 was skipped). Adds the focus timer's tables. To check it has run:
    `select to_regclass('public.task_focus');` → not null. Tested on a copy of the post-U10 schema (older-app tables
    present): run twice, all database tests pass. The reminder changes in round 12 need no database change.
+   **Update 12 (`012_owner_picks_date.sql`, U12)** was delivered on 31 Oct (round 13). It **includes U3–U11**. Lets a task be
+   given without a deadline (the owner picks it on Got it). To check it has run:
+   `select column_name from information_schema.columns where table_name='tasks' and column_name='latest_by';` → one row.
+   Tested on a copy of the post-U11 schema (older-app tables present): run twice, all database tests pass.
    **Code uploads (16 Oct):** the live app was still on the U5 code (Pin/Remind, but no "Assigned by" line). His next
    attempt dragged the *contents* of `src` (paths showed `/apps/...`); he was told to drag the `src` folder itself so
    paths read `src/apps/...`. If the screens don't change after an upload, check that first.
@@ -392,6 +396,19 @@ auto-start); reminders: **Snooze → Pick date & time**, **change the time any t
   `FocusButton.tsx` (TOP_BAR, before Reminders), My output "Focus time" tile + section, `ReminderEdit` in Reminders.tsx.
   Shell now keys TOP_BAR buttons by position (two come from Tasks).
 
+### Round 13 (31 Oct 2026)
+**Hasith:** "I need to be able to assign tasks without deadlines and the team members should be able to pick their own
+dates." Answers: they pick the date **when they press Got it** (no task stays undated once accepted); **their date becomes
+the deadline and he's told**; an **optional "latest by" date** they can't pick past; undated work shows in a **"No date
+yet" group in the lists** (and on Who's on what).
+- Decided: only for work given to someone else, one-off tasks (not projects, repeats or your own); the giver (or a
+  manager) can still set the date themselves, or leave it to the owner again while it isn't accepted; picking is the first
+  deadline, not a move; the owner's later moves stay within the latest date; "Got it for all" accepts the dated ones and
+  says how many still need a date.
+- Database (02_app_tasks.sql, rule 28): `due_date` nullable, `latest_by`, `task_due_text`, activity / alert `date_set`.
+  App: `UndatedTask` / `AnyTask` / `hasDate`, store `undated` + `findTask`, New tab date box, task panel "X picks the
+  date" + latest date + pick-and-Got-it banner, `UndatedRow`, board / table "No date yet", Excel, history wording.
+
 ### Department-only features
 - **`month_end` — Month-end declaration (for Finance)**, "like the old app": master list of lines
   (code, category MEC/CMP/any, title, owner, due day of the following month); a senior or the manager
@@ -418,7 +435,7 @@ src/features/   department-only features (daily-notes, month-end, compliance)
 public/         manifest, icons, service worker (sw.js)
 supabase/       01–09 setup files, updates/NNN, functions/workspace-push (Edge Function), templates/,
                 00_reset.sql (wipes data!)
-tests/db/       database security tests (654 checks)
+tests/db/       database security tests (688 checks)
 tests/e2e/      browser tests + a local stand-in for Supabase (incl. pg_net and fake phones)
 tests/push/     the Edge Function in real Deno (25 checks)
 tools/sql-page/ builds the copy-paste SQL page for Hasith
@@ -480,12 +497,12 @@ Key technical points (all in `CLAUDE.md` too):
 
 ## 8. Testing
 
-- `tests/db/run.sh` — 74 isolation + 89 feature + 49 round-4 + 111 round-5 + 45 round-6 + 45 round-7 + 70 round-8 + 27 round-9 + 46 round-10 + 68 round-11 + 30 round-12 checks (654) on a local
+- `tests/db/run.sh` — 74 isolation + 89 feature + 49 round-4 + 111 round-5 + 45 round-6 + 45 round-7 + 70 round-8 + 27 round-9 + 46 round-10 + 68 round-11 + 30 round-12 + 34 round-13 checks (688) on a local
   Postgres with a stand-in for Supabase's `auth`, `storage` and `pg_net`.
 - `tests/push/run.sh` — the Edge Function in real Deno (from npm), checked against the reference decoder. 25 checks.
 - `tests/e2e/run.sh` — builds the app against `tests/e2e/mock-supabase.mjs` (auth, REST subset,
   storage with real RLS), seeds a Finance + HR demo (`*@demo.lk` / `password1`) and drives Chrome
-  through every feature. All 550 browser checks pass (incl. 69 for round 5: install, phone alerts end to end
+  through every feature. All 578 browser checks pass (incl. 69 for round 5: install, phone alerts end to end
   with fake phones running the real sender code, sign-off, Got it, compliance, trends, search; 45 for round 6:
   Home, New tab, reminders, escalation, pin & follow, notes → task, phone layout; and 45 for round 7: mini tasks,
   left-overs, privacy, the Today list, Assigned by, daily/weekday repeats, phone layout; and 39 for round 8: the morning
@@ -496,7 +513,10 @@ Key technical points (all in `CLAUDE.md` too):
   for round 11: Messages end to end — announcements and Got it, @mentions, private one-to-one chats and their ticks,
   reply / edit / delete, pictures, Send as, Remind me too, Make it a mini task, attached task and note, search, HR apart, phone;
   and 42 for round 12: the focus timer with a fast-forwarded clock — lengths, focus → break → long break, pause, stop
-  early, ended while away, My output (own and the manager's), phone — and reminders' Change / Pick date & time).
+  early, ended while away, My output (own and the manager's), phone — and reminders' Change / Pick date & time; and 28 for
+  round 13: giving a task with "Kasun picks the date" and a latest date, the No date yet group, board and table, Excel,
+  the New tab's date box and Got it, Got it for all, the limit, picking in the task panel, the giver's alert and history,
+  the giver setting the date after all, phone).
   Note: some older checks depend on today's date (e.g. which calendar day is empty) — test_tasks now picks an empty day.
 - Local Postgres used during development: Postgres 16 on port 54322, user `postgres`.
 

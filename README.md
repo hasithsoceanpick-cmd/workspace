@@ -57,6 +57,12 @@ Files and screenshots sit in private storage behind the same rules (10 MB per fi
   switched on — compliance deadlines coming up and the month-end declaration status.
 - **New**: work someone gives you waits here (with a count on the tab) until you press **Got it**; only then does
   it join your lists, Today and calendar. *Got it for all* clears the lot.
+- **No deadline — they pick the date**: when you give someone a task (not your own, a project or a repeating one), tick
+  **"Kasun picks the date"** next to the deadline, and optionally set the **latest date** they may pick. It arrives in
+  their New tab with a date box: they choose their date and press **Got it** (they can't accept it without one, or pick
+  past your latest date). That date becomes the deadline and you get an alert: *"Kasun set the deadline …: Fri 6 Nov"*.
+  Until then it shows under **No date yet** at the top of your task list and on *Who's on what* (board and table), and in
+  the Excel export. You can still open it and set the date yourself.
 - **Quick reminders** (the clock button in the top bar, on every page): type a line, tap *In 1 hour / Today 5 pm /
   Tomorrow 9 am* or pick a time, optionally repeat (every day / weekday / week / month). At that time it pops up in
   the bell and on your phone. Snooze, mark done, or turn it into a task. Managers and senior executives can set
@@ -277,7 +283,8 @@ When a change needs a database update, it comes as a file in `supabase/updates/`
 | `008_follow_ups.sql` | People outside the app and the Follow-ups page (includes 003–007) |
 | `009_projects_mini_tasks.sql` | Projects with stages, mini tasks for your team (includes 003–008) |
 | `010_messages.sql` | Messages: announcements, team chat, one-to-one chats, work cards (includes 003–009) |
-| `011_focus_timer.sql` | Focus timer (Pomodoro) and focus time on My output (includes 003–010 — run only this one) |
+| `011_focus_timer.sql` | Focus timer (Pomodoro) and focus time on My output (includes 003–010) |
+| `012_owner_picks_date.sql` | Tasks given without a deadline — the owner picks the date (includes 003–011 — run only this one) |
 
 From update 5 on, each update includes all the earlier ones (built with `tools/compose_update.py`), so only the
 newest needs running.

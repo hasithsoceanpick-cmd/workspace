@@ -194,6 +194,19 @@ create index if not exists task_contacts_dept_idx on public.task_contacts (depar
 alter table public.tasks add column if not exists contact_id bigint references public.task_contacts(id) on delete restrict;
 create index if not exists tasks_contact_idx on public.tasks (contact_id) where contact_id is not null;
 
+-- work given without a deadline (added Oct 2026): the owner picks the date when they press Got it (until then it
+-- waits in their New tab with no deadline). Optionally with a latest date they may pick. Never for your own work,
+-- projects or repeating tasks.
+alter table public.tasks alter column due_date drop not null;
+alter table public.tasks add column if not exists latest_by date;
+
+-- What a task's deadline looks like in an alert: "due Fri 07 Nov" or "pick your own date (by Sat 15 Nov)".
+create or replace function public.task_due_text(p_due date, p_latest date) returns text
+language sql immutable set search_path = public as $$
+  select case when p_due is not null then 'due ' || public.fmt_date(p_due)
+              else 'pick your own date' || coalesce(' (by ' || public.fmt_date(p_latest) || ')', '') end
+$$;
+
 -- projects (added Oct 2026): one big task with dated stages; each stage can have its own person.
 -- Stages are checklist steps with a date (and optionally a person). The owner keeps a status flag with a note.
 alter table public.tasks add column if not exists nature text not null default 'task';
@@ -482,6 +495,18 @@ begin
       raise exception 'That person isn''t on this department''s list.';
     end if;
     new.created_by := coalesce(auth.uid(), new.created_by);
+    -- no deadline: only work given to someone else, an ordinary one-off task; they pick the date on Got it
+    if new.due_date is null then
+      if new.assignee_id is not distinct from new.created_by or new.nature = 'project' or new.repeat is not null
+         or new.status in ('done', 'review') then
+        raise exception 'Pick a deadline. Only a task you give to someone else can leave the date to them.';
+      end if;
+      if new.latest_by is not null and new.latest_by < public.app_today() then
+        raise exception 'The latest date can''t be in the past.';
+      end if;
+    else
+      new.latest_by := null;
+    end if;
     new.created_at := now();
     new.updated_at := now();
     new.completed_at := case when new.status = 'done' then now() end;
@@ -515,7 +540,9 @@ begin
   new.created_at := old.created_at;
   new.overdue_notified_on := old.overdue_notified_on;
   new.reminded_on := old.reminded_on;
-  new.original_due := old.original_due;
+  -- the date the owner picks for work given without one is its first deadline, not a move
+  new.original_due := case when old.due_date is null and new.due_date is not null then coalesce(old.original_due, new.due_date)
+                           else old.original_due end;
   new.next_task_id := old.next_task_id;
   new.remind_sent_for := old.remind_sent_for;
   new.ack_reminded_on := case when new.assignee_id is distinct from old.assignee_id then null else old.ack_reminded_on end;
@@ -526,7 +553,8 @@ begin
   new.series_id := coalesce(old.series_id, case when new.repeat is not null then old.id end);
   -- a new deadline is a fresh start for escalation
   new.escalated_at := case when new.due_date is distinct from old.due_date then null else old.escalated_at end;
-  new.due_moves := old.due_moves + case when new.due_date is distinct from old.due_date then 1 else 0 end;
+  new.due_moves := old.due_moves + case when old.due_date is not null and new.due_date is not null
+                                             and new.due_date is distinct from old.due_date then 1 else 0 end;
   if new.nature = 'project' then new.repeat := null; end if;   -- projects don't repeat
   -- project status flag: the owner, whoever gave it, or a manager
   if row(new.health, new.health_note) is distinct from row(old.health, old.health_note) then
@@ -593,6 +621,33 @@ begin
     new.acknowledged_at := old.acknowledged_at;
   end if;
 
+  -- work given without a deadline: the owner must pick a date to accept it; whoever gave it sets the latest date
+  if new.latest_by is distinct from old.latest_by and auth.uid() is not null
+     and not public.can_check_task(old.department_id, old.assignee_id, old.created_by) then
+    raise exception 'Only whoever gave the task (or a manager) sets the latest date.' using errcode = '42501';
+  end if;
+  if new.due_date is null then
+    if new.assignee_id is not distinct from old.created_by or new.nature = 'project' or new.repeat is not null then
+      raise exception 'Pick a deadline. Only a task you give to someone else can leave the date to them.';
+    end if;
+    if new.acknowledged_at is not null or new.status is distinct from old.status then
+      raise exception 'Pick a date for "%" first.', new.title;
+    end if;
+    if old.due_date is not null and auth.uid() is not null
+       and not public.can_check_task(old.department_id, old.assignee_id, old.created_by) then
+      raise exception 'Only whoever gave the task (or a manager) can leave the date to its owner.' using errcode = '42501';
+    end if;
+  elsif new.due_date is distinct from old.due_date and auth.uid() = new.assignee_id
+        and not public.can_check_task(old.department_id, new.assignee_id, old.created_by) then
+    -- the owner choosing (or later moving) their own date: within the latest date, and not in the past when first picked
+    if new.latest_by is not null and new.due_date > new.latest_by then
+      raise exception 'Pick a date on or before %.', public.fmt_date(new.latest_by);
+    end if;
+    if old.due_date is null and new.due_date < public.app_today() then
+      raise exception 'Pick today or a later date.';
+    end if;
+  end if;
+
   -- sign-off (maker → checker)
   if new.status is distinct from old.status and auth.uid() is not null then
     declare
@@ -634,9 +689,9 @@ begin
     new.completed_at := old.completed_at;
   end if;
 
-  if row(new.title, new.notes, new.assignee_id, new.status, new.priority, new.due_date, new.repeat, new.needs_check, new.remind_days, new.daily_update, new.contact_id)
+  if row(new.title, new.notes, new.assignee_id, new.status, new.priority, new.due_date, new.repeat, new.needs_check, new.remind_days, new.daily_update, new.contact_id, new.latest_by)
      is distinct from
-     row(old.title, old.notes, old.assignee_id, old.status, old.priority, old.due_date, old.repeat, old.needs_check, old.remind_days, old.daily_update, old.contact_id) then
+     row(old.title, old.notes, old.assignee_id, old.status, old.priority, old.due_date, old.repeat, old.needs_check, old.remind_days, old.daily_update, old.contact_id, old.latest_by) then
     new.updated_at := now();
   else
     new.updated_at := old.updated_at;
@@ -666,7 +721,7 @@ begin
     insert into public.task_activity (task_id, department_id, actor_id, kind, new_value)
     values (new.id, d, actor, 'created', new.title);
     perform public.notify(array[new.assignee_id], d, 'tasks', new.id, 'assigned',
-      format('%s assigned you "%s" — due %s', who, new.title, public.fmt_date(new.due_date)), actor);
+      format('%s assigned you "%s" — %s', who, new.title, public.task_due_text(new.due_date, new.latest_by)), actor);
     return null;
   end if;
 
@@ -702,8 +757,23 @@ begin
     values (new.id, d, actor, 'acknowledged');
   end if;
 
+  -- the date picked for work given without one → whoever gave it (or the owner, if someone else set it)
+  if old.due_date is null and new.due_date is not null then
+    insert into public.task_activity (task_id, department_id, actor_id, kind, old_value, new_value)
+    values (new.id, d, actor, 'date_set', null, new.due_date::text);
+    perform public.notify(
+      case when actor = new.assignee_id then array[new.created_by] else array[new.assignee_id] end
+        || public.helper_ids(new.id) || public.task_follower_ids(new.id),
+      d, 'tasks', new.id, 'date_set',
+      format('%s set the deadline for "%s": %s', who, new.title, public.fmt_date(new.due_date)), actor);
+  -- the deadline taken off again (whoever gave it): the owner picks one
+  elsif new.due_date is null and old.due_date is not null then
+    insert into public.task_activity (task_id, department_id, actor_id, kind, old_value, new_value)
+    values (new.id, d, actor, 'due_date', old.due_date::text, null);
+    perform public.notify(array[new.assignee_id], d, 'tasks', new.id, 'due_moved',
+      format('%s left the date of "%s" to you — %s', who, new.title, public.task_due_text(null, new.latest_by)), actor);
   -- deadline moved → assignee, assigner and the department's managers
-  if new.due_date is distinct from old.due_date then
+  elsif new.due_date is distinct from old.due_date then
     insert into public.task_activity (task_id, department_id, actor_id, kind, old_value, new_value)
     values (new.id, d, actor, 'due_date', old.due_date::text, new.due_date::text);
     perform public.notify(array[new.assignee_id, new.created_by] || public.manager_ids(d) || public.helper_ids(new.id)
@@ -717,7 +787,7 @@ begin
     insert into public.task_activity (task_id, department_id, actor_id, kind, old_value, new_value)
     values (new.id, d, actor, 'assignee', old.assignee_id::text, new.assignee_id::text);
     perform public.notify(array[new.assignee_id], d, 'tasks', new.id, 'assigned',
-      format('%s assigned you "%s" — due %s', who, new.title, public.fmt_date(new.due_date)), actor);
+      format('%s assigned you "%s" — %s', who, new.title, public.task_due_text(new.due_date, new.latest_by)), actor);
     perform public.notify(array[old.assignee_id], d, 'tasks', new.id, 'reassigned',
       format('%s moved "%s" to %s', who, new.title, public.name_of(new.assignee_id)), actor);
   end if;
@@ -730,6 +800,7 @@ begin
   if new.needs_check is distinct from old.needs_check then changed := changed || 'sign-off'::text; end if;
   if new.daily_update is distinct from old.daily_update then changed := changed || 'daily updates'::text; end if;
   if new.contact_id is distinct from old.contact_id then changed := changed || 'outside person'::text; end if;
+  if new.latest_by is distinct from old.latest_by then changed := changed || 'latest date'::text; end if;
   if cardinality(changed) > 0 then
     insert into public.task_activity (task_id, department_id, actor_id, kind, old_value, new_value)
     values (new.id, d, actor, 'edited',
@@ -891,8 +962,8 @@ begin
     insert into public.task_activity (task_id, department_id, actor_id, kind, new_value)
     values (t.id, t.department_id, auth.uid(), 'helper_added', new.user_id::text);
     perform public.notify(array[new.user_id], t.department_id, 'tasks', t.id, 'helper',
-      format('%s added you as a helper on "%s" — due %s', public.name_of(auth.uid()), t.title,
-             public.fmt_date(t.due_date)), auth.uid());
+      format('%s added you as a helper on "%s" — %s', public.name_of(auth.uid()), t.title,
+             coalesce('due ' || public.fmt_date(t.due_date), 'no date yet')), auth.uid());
   elsif pg_trigger_depth() = 1 then
     select * into t from public.tasks where id = old.task_id;
     if found then

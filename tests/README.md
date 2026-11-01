@@ -64,6 +64,12 @@ executives read them like My output (HR doesn't), never changed afterwards, toda
 deleted task keeps the time; each person's lengths (saved, limits, private) — and changing reminders: the person reminded
 or whoever set it can change the words, date and time (it alerts again), nobody else, never handed to someone else. 30 checks.
 
+`tests/db/round13.test.mjs` covers work given without a deadline: only to someone else and only for one-off tasks (not your
+own, projects, repeats), the latest date (not in the past, only the giver / a manager changes it), Got it and starting
+need a date first, the owner's date within the limit and not in the past, picking = first deadline (not a move) with one
+alert to the giver, later moves within the limit, the giver setting a date or leaving it to the owner again (before Got it
+only), reassigning keeps it open, the morning check, trends, search and helper alerts all cope with no date. 34 checks.
+
 Run it against a **throwaway local Postgres** (never your live Supabase project):
 
 ```

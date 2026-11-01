@@ -57,9 +57,11 @@ async def main():
         persons = await h.locator('.week-person .strong').all_inner_texts()
         cells = h.locator('.wcell')
         days = await h.locator('.week-dow').all_inner_texts()
-        col = lambda iso: [i for i, t in enumerate(days) if t.split()[-1] == str(int(iso[-2:]))][0]
+        cols = lambda iso: [i for i, t in enumerate(days) if t.split()[-1] == str(int(iso[-2:]))]
+        col = lambda iso: cols(iso)[0]
         ki, ai = persons.index('Kasun Silva'), persons.index('Amaya Fernando')
-        src_day = day(1); tgt_day = day(2) if col(day(2)) > col(day(1)) else day(0)
+        # another day in the same week as day(1) (on a Sunday the next day is in the following week)
+        src_day = day(1); tgt_day = day(2) if cols(day(2)) and col(day(2)) > col(day(1)) else day(0)
         await h.locator('.chip:has-text("Clear unreconciled items list")').drag_to(cells.nth(ki * 7 + col(tgt_day))); await h.wait_for_timeout(900)
         check('Clear unreconciled items list' in await cells.nth(ki * 7 + col(tgt_day)).inner_text(), 'drag moves the deadline')
         await h.locator('.chip:has-text("Clear unreconciled items list")').drag_to(cells.nth(ai * 7 + col(tgt_day))); await h.wait_for_timeout(900)

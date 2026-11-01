@@ -109,6 +109,7 @@ language sql immutable as $$
     when 'stage'       then 'Project stage for you'
     when 'stage_overdue' then 'Missed project stage'
     when 'health'      then 'Project status'
+    when 'date_set'    then 'Deadline set'
     when 'message'     then 'New message'
     when 'mention'     then 'You were mentioned'
     when 'announce'    then 'Announcement'

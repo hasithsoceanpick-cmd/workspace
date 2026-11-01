@@ -18,36 +18,39 @@ COPY_ICON = '<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
 OK = 'Success. No rows returned'
 
 steps_update = [
-  dict(key='u11', num='U11', title='Focus timer (includes U3 to U10)', badge='now',
-       file='updates/011_focus_timer.sql',
-       desc='Adds the focus timer (Pomodoro): each focus session is saved so it shows on <b>My output</b>, and each person\'s lengths are saved for every device. <b>It also includes everything from U3 to U10</b> (Messages, projects, follow-ups, daily updates and the rest), so this is the only one to run — if you skipped U10, this switches Messages on too. Keeps all your data; safe to run again; doesn\'t touch your older app\'s tables.',
+  dict(key='u12', num='U12', title='Tasks without a deadline (includes U3 to U11)', badge='now',
+       file='updates/012_owner_picks_date.sql',
+       desc='Lets you give a task without a deadline: the person picks their own date when they press <b>Got it</b> (optionally no later than a date you set), and you\'re told the date. <b>It also includes everything from U3 to U11</b> (focus timer, Messages and the rest), so this is the only one to run. Keeps all your data; safe to run again; doesn\'t touch your older app\'s tables.',
        expect=OK, note='Supabase will warn about "destructive operations" — click <b>Run this query</b>. It only replaces older versions of the app\'s own rules.', cls='step-update'),
 ]
 steps_done = [
+  dict(key='u11', num='U11', title='Focus timer', badge='done',
+       file='updates/011_focus_timer.sql',
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u10', num='U10', title='Messages', badge='done',
        file='updates/010_messages.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u9', num='U9', title='Projects and mini tasks for your team', badge='done',
        file='updates/009_projects_mini_tasks.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u8', num='U8', title='Follow-ups: people outside the app', badge='done',
        file='updates/008_follow_ups.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u7', num='U7', title='Daily updates, My output', badge='done',
        file='updates/007_daily_updates_output.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u6', num='U6', title='Mini tasks, daily repeats', badge='done',
        file='updates/006_mini_tasks_daily_repeats.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u5', num='U5', title='Reminders, pin & follow, escalation', badge='done',
        file='updates/005_reminders_home_escalation.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u4', num='U4', title='Phone alerts, sign-off, Got it, compliance calendar, trends, search', badge='done',
        file='updates/004_alerts_signoff_compliance_search.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u3', num='U3', title='Deadline history, repeating tasks, month-end declaration', badge='done',
        file='updates/003_history_repeat_month_end.sql',
-       desc='Included in U11 — no need to run it separately.', expect=OK, cls='is-done static-done'),
+       desc='Included in U12 — no need to run it separately.', expect=OK, cls='is-done static-done'),
   dict(key='u2', num='U2', title='Helpers, checklists, files, Today planner, Notes', badge='done',
        file='updates/002_helpers_checklist_files_today_notes.sql',
        desc='Already run on your database (6 Oct). No need to run again.', expect='a small report table', cls='is-done static-done'),
@@ -102,7 +105,7 @@ all_steps = steps_update + steps_done + steps_fresh
 body = f'''<div class="wrap">
   <header>
     <h1>Workspace SQL setup</h1>
-    <p>Copy a script, paste it into Supabase, run it. Your database is already set up, so only <b>U11</b> at the top is needed now.</p>
+    <p>Copy a script, paste it into Supabase, run it. Your database is already set up, so only <b>U12</b> at the top is needed now.</p>
   </header>
 
   <div class="how">
