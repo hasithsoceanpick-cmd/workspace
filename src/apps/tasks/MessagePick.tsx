@@ -25,9 +25,9 @@ export default function MessagePick({ kind, onPick, onCancel }: WorkPickProps) {
             .eq('department_id', dept!.id).neq('status', 'done').order('due_date').limit(400);
           if (error) throw error;
           const td = today();
-          setRows(((data ?? []) as { id: number; title: string; status: string; due_date: string; assignee_id: string }[]).map(t => ({
-            id: t.id, title: t.title, for_id: t.assignee_id, late: !finished(t) && t.due_date < td,
-            sub: `${who(t.assignee_id)} · due ${fmtDue(t.due_date)}${t.status === 'review' ? ` · ${statusLabel(t.status)}` : ''}`,
+          setRows(((data ?? []) as { id: number; title: string; status: string; due_date: string | null; assignee_id: string }[]).map(t => ({
+            id: t.id, title: t.title, for_id: t.assignee_id, late: !!t.due_date && !finished(t) && t.due_date < td,
+            sub: `${who(t.assignee_id)} · ${t.due_date ? `due ${fmtDue(t.due_date)}` : 'no date yet'}${t.status === 'review' ? ` · ${statusLabel(t.status)}` : ''}`,
           })));
         } else {
           const list = (await loadReminders()).filter((r: Reminder) => !r.done_at);

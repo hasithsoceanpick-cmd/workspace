@@ -5,7 +5,7 @@ import { addDays, fmtDay, localDayOf, startOfWeek, today } from '../../../lib/da
 import { firstName } from '../../../lib/labels';
 import { finished } from '../labels';
 import type { Task } from '../types';
-import TaskRow from '../TaskRow';
+import TaskRow, { UndatedRow } from '../TaskRow';
 import StageRow from '../StageRow';
 import { exportTasks } from '../export';
 
@@ -14,12 +14,12 @@ const byDue = (a: Task, b: Task) =>
   a.due_date.localeCompare(b.due_date) || prioRank[a.priority] - prioRank[b.priority] || a.id - b.id;
 
 export default function TasksPage({ params }: { params: Params }) {
-  const { me, isLead, inDept, team, tasks, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks, contactOf, myStages } = useTaskApp();
+  const { me, isLead, inDept, team, tasks, undated, person, loaded, createTask, toast, fail, helpersOf, progressOf, dept, canCheck, checkerOf, inInbox, inbox, marks, contactOf, myStages } = useTaskApp();
   const [exporting, setExporting] = useState(false);
   async function doExport() {
     setExporting(true);
     try {
-      await exportTasks({ deptName: dept!.name, deptId: dept!.id, tasks, person, helpersOf, progressOf, contactOf });
+      await exportTasks({ deptName: dept!.name, deptId: dept!.id, tasks: [...undated, ...tasks], person, helpersOf, progressOf, contactOf });
     } catch (e) { fail(e); }
     setExporting(false);
   }
@@ -50,7 +50,17 @@ export default function TasksPage({ params }: { params: Params }) {
     (show === 'done' ? t.status === 'done' : t.status !== 'done') &&
     (!q || t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q))).sort(byDue), [tasks, helperId, helpersOf, show, q]);
 
-  const matches = (t: Task) => !q || t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q);
+  const matches = (t: Pick<Task, 'title' | 'notes'>) => !q || t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q);
+
+  // given without a deadline, still waiting for the owner's date (my own ones are in my New tab)
+  const noDate = useMemo(() => show !== 'open' ? [] : undated.filter(t => {
+    if (inInbox(t) || !matches(t)) return false;
+    if (who === 'me' || who === 'byme') return t.created_by === me.id;
+    if (who === 'all') return true;
+    if (who === 'following') return marks(t.id).following;
+    return t.assignee_id === who;
+  }).sort((a, b) => (a.latest_by ?? '9999').localeCompare(b.latest_by ?? '9999') || a.id - b.id),
+  [undated, show, who, me.id, inInbox, marks, q]); // eslint-disable-line react-hooks/exhaustive-deps
   const filtered = useMemo(() => mine.filter(t =>
     (show === 'done' ? t.status === 'done' : t.status !== 'done') && matches(t)), [mine, show, q]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,7 +206,15 @@ export default function TasksPage({ params }: { params: Params }) {
         </section>
       )}
 
-      {!loaded ? <div className="empty">Loading…</div> : groups.length === 0 && helping.length === 0 && waiting.length === 0 && toSignOff.length === 0 && pinned.length === 0 ? (
+      {loaded && noDate.length > 0 && (
+        <section className="group nodate-group">
+          <h2>No date yet <span className="count">{noDate.length}</span>
+            <span className="muted tiny group-note">waiting for {who === 'me' || who === 'byme' ? 'them' : 'the owner'} to pick a date</span></h2>
+          <div className="list">{noDate.map(t => <UndatedRow key={t.id} t={t} />)}</div>
+        </section>
+      )}
+
+      {!loaded ? <div className="empty">Loading…</div> : groups.length === 0 && helping.length === 0 && waiting.length === 0 && toSignOff.length === 0 && pinned.length === 0 && noDate.length === 0 ? (
         <div className="empty">
           {q ? 'No tasks match your search.' : show === 'done' ? 'Nothing completed yet.' : 'Nothing open here.'}
         </div>

@@ -1,10 +1,10 @@
 import { useMemo, useState, type DragEvent } from 'react';
 import { useTaskApp } from '../store';
 import { go, setParams, type Params } from '../../../lib/route';
-import { addDays, daysBetween, fmtDue, fromISO, localDayOf, startOfWeek, today } from '../../../lib/dates';
+import { addDays, daysBetween, fmtDay, fmtDue, fromISO, localDayOf, startOfWeek, today } from '../../../lib/dates';
 import { firstName, roleLabel } from '../../../lib/labels';
 import Avatar from '../../../platform/Avatar';
-import type { Task } from '../types';
+import type { Task, UndatedTask } from '../types';
 import { repeatLabel, statusLabel } from '../labels';
 import AssignedBy from '../AssignedBy';
 import OutsideWith from '../OutsideWith';
@@ -53,7 +53,7 @@ function BoardFilters({ params }: { params: Params }) {
 }
 
 function Board({ params }: { params: Params }) {
-  const { me, team, tasks, person, openTask, helpersOf, helperOnly, progressOf, canAssignTo, updateTask, toast } = useTaskApp();
+  const { me, team, tasks, undated, person, openTask, helpersOf, helperOnly, progressOf, canAssignTo, updateTask, toast } = useTaskApp();
   const td = today();
   const showHelping = params.helping !== '0';
   const [over, setOver] = useState<string | null>(null);
@@ -69,13 +69,15 @@ function Board({ params }: { params: Params }) {
     const own = tasks.filter(t => t.assignee_id === p.id && keep(t)).sort(order);
     const helping = showHelping ? tasks.filter(t => t.assignee_id !== p.id && keep(t) && helpersOf(t.id).includes(p.id)).sort(order) : [];
     const allOpen = tasks.filter(t => t.assignee_id === p.id && !finished(t));
+    // given without a deadline: waiting for this person's date (not part of "overdue / within 7 days")
+    const noDate = params.show ? [] : undated.filter(t => t.assignee_id === p.id);
     return {
-      p, own, helping,
+      p, own, helping, noDate,
       open: allOpen.length,
       overdue: allOpen.filter(t => t.due_date < td).length,
       today: allOpen.filter(t => t.due_date === td).length,
     };
-  }), [team, tasks, helpersOf, showHelping, params.show, td]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [team, tasks, undated, helpersOf, showHelping, params.show, td]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const totalOpen = columns.reduce((n, c) => n + c.open, 0);
   const totalLate = columns.reduce((n, c) => n + c.overdue, 0);
@@ -83,7 +85,8 @@ function Board({ params }: { params: Params }) {
   async function drop(e: DragEvent, to: string) {
     e.preventDefault();
     setOver(null);
-    const t = tasks.find(x => x.id === Number(e.dataTransfer.getData('text/x-board')));
+    const id = Number(e.dataTransfer.getData('text/x-board'));
+    const t = tasks.find(x => x.id === id) ?? undated.find(x => x.id === id);
     if (!t || t.assignee_id === to) return;
     if (!canAssignTo(to)) return toast("You can't assign work to that person.", 'error');
     const r = await updateTask(t.id, { assignee_id: to });
@@ -119,11 +122,27 @@ function Board({ params }: { params: Params }) {
     );
   };
 
+  const undatedCard = (t: UndatedTask) => (
+    <div key={`u${t.id}`} className={`bcard undated ${t.priority === 'high' ? 'high' : ''}`} draggable
+      onDragStart={e => { e.dataTransfer.setData('text/x-board', String(t.id)); e.dataTransfer.effectAllowed = 'move'; }}
+      onClick={() => openTask(t.id)} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') openTask(t.id); }}>
+      <AssignedBy t={t} />
+      <div className="bcard-title">{t.title}</div>
+      <div className="bcard-meta">
+        <span className="pill no-date">No date yet{t.latest_by ? ` · by ${fmtDay(t.latest_by)}` : ''}</span>
+        {t.priority === 'high' && <span className="pill high">High</span>}
+      </div>
+    </div>
+  );
+  const totalNoDate = columns.reduce((n, c) => n + c.noDate.length, 0);
+
   return (
     <>
       <div className="board-sum muted small">
         {totalOpen} open task{totalOpen === 1 ? '' : 's'} across {team.length} {team.length === 1 ? 'person' : 'people'}
         {totalLate > 0 && <> · <span className="danger strong">{totalLate} overdue</span></>}
+        {totalNoDate > 0 && <> · <span className="strong">{totalNoDate} waiting for a date</span></>}
       </div>
       <div className="board">
         {columns.map(c => (
@@ -146,7 +165,10 @@ function Board({ params }: { params: Params }) {
               <span className={c.today ? 'accent strong' : 'muted'}>{c.today} today</span>
             </div>
             <div className="bcol-body">
-              {c.own.length === 0 && c.helping.length === 0 && <div className="bcol-empty">Nothing here</div>}
+              {c.own.length === 0 && c.helping.length === 0 && c.noDate.length === 0 && <div className="bcol-empty">Nothing here</div>}
+              {c.noDate.length > 0 && <div className="bcol-sub">No date yet</div>}
+              {c.noDate.map(t => undatedCard(t))}
+              {c.noDate.length > 0 && c.own.length > 0 && <div className="bcol-sub">Dated</div>}
               {c.own.map(t => card(t))}
               {c.helping.length > 0 && <div className="bcol-sub">Helping on</div>}
               {c.helping.map(t => card(t, c.p.id))}
@@ -160,7 +182,7 @@ function Board({ params }: { params: Params }) {
 }
 
 function TeamTable() {
-  const { me, isAdmin, team, tasks } = useTaskApp();
+  const { me, isAdmin, team, tasks, undated } = useTaskApp();
   const td = today();
   const weekStart = startOfWeek(td);
   const weekEnd = addDays(weekStart, 6);
@@ -176,6 +198,7 @@ function TeamTable() {
       today: open.filter(t => t.due_date === td).length,
       week: open.filter(t => t.due_date >= td && t.due_date <= weekEnd).length,
       moved: open.filter(t => t.due_moves > 0).length,
+      noDate: undated.filter(t => t.assignee_id === p.id).length,
       doneToday: doneDays.filter(d => d === td).length,
       doneWeek: doneDays.filter(d => d >= weekStart).length,
     };
@@ -193,6 +216,7 @@ function TeamTable() {
               <th className="num">Overdue</th>
               <th className="num">Due today</th>
               <th className="num">Due this week</th>
+              <th className="num">No date yet</th>
               <th className="num">Deadline moved</th>
               <th className="num">Done today</th>
               <th className="num">Done this week</th>
@@ -212,6 +236,7 @@ function TeamTable() {
                 <td className={`num ${r.overdue ? 'danger strong' : 'muted'}`}>{r.overdue}</td>
                 <td className={`num ${r.today ? 'accent strong' : 'muted'}`}>{r.today}</td>
                 <td className="num">{r.week}</td>
+                <td className={`num ${r.noDate ? 'strong' : 'muted'}`}>{r.noDate}</td>
                 <td className={`num ${r.moved ? 'warn strong' : 'muted'}`}>{r.moved}</td>
                 <td className="num good">{r.doneToday || <span className="muted">0</span>}</td>
                 <td className="num">{r.doneWeek}</td>

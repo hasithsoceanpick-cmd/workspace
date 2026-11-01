@@ -9,7 +9,7 @@ import { finished, statusLabel } from './labels';
 import { fmtWhen, presets, remindersChanged } from './reminders';
 
 type Live =
-  | { kind: 'task'; id: number; title: string; status: string; due_date: string; assignee_id: string }
+  | { kind: 'task'; id: number; title: string; status: string; due_date: string | null; assignee_id: string }
   | { kind: 'mini'; id: number; body: string; day: string; done_at: string | null; user_id: string }
   | { kind: 'reminder'; id: number; body: string; remind_at: string; done_at: string | null; user_id: string };
 
@@ -78,13 +78,13 @@ export default function MessageCard({ item }: WorkCardProps) {
   if (item.kind === 'task') {
     const open = () => (live ? go('tasks', '', { task: String(item.ref_id) }) : toast('Only people working on this task can open it.', 'error'));
     const t = live?.kind === 'task' ? live : null;
-    const late = t && !finished(t) && t.due_date < today();
+    const late = t && t.due_date && !finished(t) && t.due_date < today();
     return (
       <button className={`wcard k-task ${t ? '' : 'locked'}`} onClick={open} title={t ? 'Open the task' : "You can't open this task"}>
         <span className="wcard-icon" aria-hidden>📋</span>
         <span className="wcard-main">
           <span className="wcard-kind">
-            Task{forId ? ` for ${forName}` : ''}{t ? ` · due ${fmtDue(t.due_date)}` : ''}
+            Task{forId ? ` for ${forName}` : ''}{t ? (t.due_date ? ` · due ${fmtDue(t.due_date)}` : ' · no date yet') : ''}
           </span>
           <span className="wcard-title">{title || 'Untitled'}</span>
         </span>

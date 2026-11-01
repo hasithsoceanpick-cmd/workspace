@@ -3,14 +3,14 @@ import { downloadXlsx, xDate, type XSheet } from '../../platform/excel';
 import { today } from '../../lib/dates';
 import type { Profile } from '../../platform/types';
 import { finished, healthLabel, isLate, remindLabel, repeatLabel, statusLabel } from './labels';
-import type { Task, TaskActivity } from './types';
+import { hasDate, type AnyTask, type TaskActivity } from './types';
 
 /**
  * Download the tasks this person can see in the department as an Excel file:
  * a Tasks sheet and a Deadline moves sheet. It doubles as a backup.
  */
 export async function exportTasks(opts: {
-  deptName: string; deptId: string; tasks: Task[];
+  deptName: string; deptId: string; tasks: AnyTask[];
   person: (id: string | null | undefined) => Profile | undefined;
   helpersOf: (id: number) => string[];
   progressOf: (id: number) => { done: number; total: number } | null;
@@ -21,7 +21,7 @@ export async function exportTasks(opts: {
   const name = (id: string | null | undefined) => person(id)?.full_name ?? '';
   const td = today();
   const sorted = [...tasks].sort((a, b) =>
-    Number(finished(a)) - Number(finished(b)) || a.due_date.localeCompare(b.due_date) || a.id - b.id);
+    Number(finished(a)) - Number(finished(b)) || (a.due_date ?? '').localeCompare(b.due_date ?? '') || a.id - b.id);
 
   const taskSheet: XSheet = {
     name: 'Tasks',
@@ -37,10 +37,13 @@ export async function exportTasks(opts: {
     ],
     rows: sorted.map(t => {
       const p = progressOf(t.id);
-      const late = isLate(t, td)
+      const late = hasDate(t) && isLate(t, td)
         ? Math.round((Date.parse(td) - Date.parse(t.due_date)) / 86400000) : null;
+      // given without a deadline and not dated yet: the owner picks it
+      const status = hasDate(t) ? statusLabel(t.status)
+        : `No date yet — owner picks${t.latest_by ? ` (by ${t.latest_by.split('-').reverse().join('/')})` : ''}`;
       return [
-        t.id, t.title, name(t.assignee_id), outside(t.contact_id), helpersOf(t.id).map(name).join(', '), statusLabel(t.status),
+        t.id, t.title, name(t.assignee_id), outside(t.contact_id), helpersOf(t.id).map(name).join(', '), status,
         t.priority[0].toUpperCase() + t.priority.slice(1), xDate(t.due_date), xDate(t.original_due ?? t.due_date),
         t.due_moves ?? 0, late, repeatLabel(t.repeat), p ? `${p.done}/${p.total}` : '', name(t.created_by),
         xDate(t.created_at), xDate(t.submitted_at ?? t.completed_at), name(t.checked_by), t.sent_back_n || null,

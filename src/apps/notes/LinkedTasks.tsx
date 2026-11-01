@@ -6,7 +6,7 @@ import { firstName } from '../../lib/labels';
 import { usePlatform } from '../../platform/store';
 import Avatar from '../../platform/Avatar';
 
-type TaskLite = { id: number; title: string; status: string; due_date: string; assignee_id: string };
+type TaskLite = { id: number; title: string; status: string; due_date: string | null; assignee_id: string };
 const COLS = 'id,title,status,due_date,assignee_id';
 
 /** Tasks linked to a page. Only tasks you're allowed to see are listed. */
@@ -22,7 +22,7 @@ export default function LinkedTasks({ noteId, departmentId }: { noteId: number; 
     const ids = ((data ?? []) as { task_id: number }[]).map(r => r.task_id);
     if (!ids.length) return setLinked([]);
     const t = await supabase.from('tasks').select(COLS).in('id', ids);
-    setLinked(((t.data ?? []) as TaskLite[]).sort((a, b) => a.due_date.localeCompare(b.due_date)));
+    setLinked(((t.data ?? []) as TaskLite[]).sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999')));
   }, [noteId]);
   useEffect(() => { load(); }, [load]);
 
@@ -70,7 +70,7 @@ export default function LinkedTasks({ noteId, departmentId }: { noteId: number; 
               {matches.map(t => (
                 <li key={t.id}><button onClick={() => link(t)}>
                   <span className="grow">{t.title}</span>
-                  <span className="muted tiny">#{t.id} · {firstName(person(t.assignee_id)?.full_name ?? '')} · {t.status === 'done' ? 'done' : fmtDue(t.due_date)}</span>
+                  <span className="muted tiny">#{t.id} · {firstName(person(t.assignee_id)?.full_name ?? '')} · {t.status === 'done' ? 'done' : t.due_date ? fmtDue(t.due_date) : 'no date yet'}</span>
                 </button></li>
               ))}
             </ul>
@@ -80,14 +80,14 @@ export default function LinkedTasks({ noteId, departmentId }: { noteId: number; 
       {linked.length === 0 ? (!picking && <div className="muted small">No tasks linked yet.</div>) : (
         <ul className="linked-list">
           {linked.map(t => {
-            const late = t.status !== 'done' && t.status !== 'review' && t.due_date < td;
+            const late = !!t.due_date && t.status !== 'done' && t.status !== 'review' && t.due_date < td;
             return (
               <li key={t.id} className={t.status === 'done' ? 'done' : ''}>
                 <button className="linked-open" onClick={() => go('tasks', 'list', { task: String(t.id) })}>
                   <span className={`st-dot s-${t.status}`} />
                   <span className="grow">{t.title}</span>
                   <Avatar p={person(t.assignee_id)} size={18} />
-                  <span className={`tiny ${late ? 'danger' : 'muted'}`}>{t.status === 'done' ? 'Done' : t.status === 'review' ? 'Waiting for sign-off' : fmtDue(t.due_date)}</span>
+                  <span className={`tiny ${late ? 'danger' : 'muted'}`}>{t.status === 'done' ? 'Done' : t.status === 'review' ? 'Waiting for sign-off' : t.due_date ? fmtDue(t.due_date) : 'No date yet'}</span>
                 </button>
                 <button className="icon-btn" onClick={() => unlink(t)} aria-label={`Unlink ${t.title}`}>✕</button>
               </li>

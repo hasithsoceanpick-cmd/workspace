@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { useTaskApp } from './store';
 import { supabase } from '../../supabase';
-import type { TaskActivity as Activity, TaskComment as Comment, Task, TaskDraft } from './types';
+import { hasDate, type AnyTask, type TaskActivity as Activity, type TaskComment as Comment, type TaskDraft } from './types';
 import { PRIORITIES, REMINDS, REPEATS, STATUSES, finished, isDaily, isLate } from './labels';
 import AssignedBy from './AssignedBy';
 import OutsideWith from './OutsideWith';
@@ -22,8 +22,9 @@ import { TaskFiles, useTaskFiles } from './TaskFiles';
 import { ReminderForm } from './Reminders';
 import { Checklist, useChecklist } from './Checklist';
 
-const editable = (t: TaskDraft | Task) => ({
+const editable = (t: TaskDraft | AnyTask) => ({
   title: t.title, notes: t.notes, assignee_id: t.assignee_id, priority: t.priority, due_date: t.due_date,
+  latest_by: t.due_date === null ? t.latest_by ?? null : null,
   repeat: t.repeat ?? null, remind_days: t.remind_days ?? null, needs_check: t.needs_check ?? true,
   daily_update: t.daily_update ?? false, contact_id: t.contact_id ?? null,
 });
@@ -31,7 +32,7 @@ const editable = (t: TaskDraft | Task) => ({
 export default function TaskDrawer() {
   const store = useTaskApp();
   const {
-    drawer, closeDrawer, tasks, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
+    drawer, closeDrawer, findTask, me, person, team, createTask, updateTask, deleteTask, canDelete, toast,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper, isLead, refreshChecklist, myAppKeys, fullView,
     canCheck, checkerOf, acknowledge, sendBack, refresh, marks, setMark, updatePosted, postUpdate, contacts, contactOf,
   } = store;
@@ -39,7 +40,7 @@ export default function TaskDrawer() {
   const panels = TASK_PANELS.filter(p => myAppKeys.includes(p.app));
   const defaultAssignee = team.some(p => p.id === me.id) ? me.id : team[0]?.id ?? '';
   const isNew = drawer?.mode === 'new';
-  const task = drawer?.mode === 'edit' ? tasks.find(t => t.id === drawer.id) : undefined;
+  const task = drawer?.mode === 'edit' ? findTask(drawer.id) : undefined;
   const readOnly = !!task && helperOnly(task);   // helpers can't change the task itself
 
   const [form, setForm] = useState<TaskDraft>(() => {
@@ -47,7 +48,7 @@ export default function TaskDrawer() {
       const d = drawer.defaults;
       return {
         title: d.title ?? '', notes: d.notes ?? '', status: d.status ?? 'todo', priority: d.priority ?? 'normal',
-        due_date: d.due_date ?? today(), repeat: d.repeat ?? null, remind_days: d.remind_days ?? null, needs_check: true,
+        due_date: d.due_date === undefined ? today() : d.due_date, latest_by: d.latest_by ?? null, repeat: d.repeat ?? null, remind_days: d.remind_days ?? null, needs_check: true,
         daily_update: d.daily_update ?? false, contact_id: d.contact_id ?? null, nature: d.nature ?? 'task',
         assignee_id: d.assignee_id && team.some(p => p.id === d.assignee_id) ? d.assignee_id : defaultAssignee,
       };
@@ -106,6 +107,11 @@ export default function TaskDrawer() {
   }, [wanted, task, checked, refresh]);
 
   useEffect(() => {
+    if (!isNew || form.due_date !== null) return;
+    if (form.assignee_id === me.id || kind === 'project' || form.repeat) setForm(f => ({ ...f, due_date: today(), latest_by: null }));
+  }, [isNew, form.due_date, form.assignee_id, form.repeat, kind, me.id]);
+
+  useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') closeDrawer(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -133,7 +139,8 @@ export default function TaskDrawer() {
 
   function validate(): string | null {
     if (!form.title.trim()) return 'Give the task a title.';
-    if (!form.due_date) return 'Pick a deadline.';
+    if (!form.due_date && !(openAllowed || pickingMine)) return 'Pick a deadline.';
+    if (!form.due_date && form.latest_by && form.latest_by < today()) return "The latest date can't be in the past.";
     return null;
   }
 
@@ -156,8 +163,9 @@ export default function TaskDrawer() {
       } else setBusy(false);
     } else if (task) {
       const patch: Partial<TaskDraft> = {};
-      (Object.keys(editable(form)) as (keyof ReturnType<typeof editable>)[]).forEach(k => {
-        if (form[k] !== task[k]) (patch as Record<string, unknown>)[k] = k === 'title' ? form.title.trim() : form[k];
+      const base = editable(task), next = editable(form);
+      (Object.keys(next) as (keyof ReturnType<typeof editable>)[]).forEach(k => {
+        if (next[k] !== base[k]) (patch as Record<string, unknown>)[k] = k === 'title' ? form.title.trim() : next[k];
       });
       const t = await updateTask(task.id, patch);
       setBusy(false);
@@ -197,7 +205,12 @@ export default function TaskDrawer() {
 
   async function gotIt() {
     if (!task) return;
-    await acknowledge(task.id);
+    // work given without a deadline: the date I pick goes with my Got it
+    if (!task.due_date) {
+      if (!form.due_date) return toast('Pick your date first.', 'error');
+      if (task.latest_by && form.due_date > task.latest_by) return toast(`Pick a date on or before ${fmtDay(task.latest_by)}.`, 'error');
+      if (await acknowledge(task.id, form.due_date)) toast(`Got it — due ${fmtDay(form.due_date)}, ${firstName(nameOf(task.created_by))} has been told`);
+    } else await acknowledge(task.id);
     loadThread();
   }
 
@@ -242,7 +255,13 @@ export default function TaskDrawer() {
   }
 
   const onTitleKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); if (isNew) save(); } };
-  const overdue = task && isLate(task, today());
+  const overdue = !!task && hasDate(task) && isLate(task, today());
+  // work given without a deadline: whoever gives it may leave the date to the owner (not for projects or repeats)
+  const openAllowed = !readOnly && form.nature !== 'project' && kind !== 'project' && !form.repeat && (isNew
+    ? form.assignee_id !== me.id
+    : !!task && !task.acknowledged_at && task.created_by !== form.assignee_id && canCheck(task));
+  const pickingMine = !!task && !task.due_date && task.assignee_id === me.id;   // I'm the owner and pick the date
+  const ownerPicks = form.due_date === null;
   const givenToOther = isNew ? form.assignee_id !== me.id : !!task && !!task.created_by && task.created_by !== form.assignee_id;
   const mayChangeCheck = isNew || (!!task && canCheck(task));
   // daily updates: whoever gave it, or a manager; the owner only on a task they made themselves
@@ -298,18 +317,27 @@ export default function TaskDrawer() {
       {task && reminding && (
         <div className="drawer-remind"><ReminderForm taskId={task.id} defaultText={task.title} onSaved={() => setReminding(false)} /></div>
       )}
-      {task?.escalated_at && task.status !== 'done' && task.status !== 'review' && (
+      {task?.escalated_at && hasDate(task) && task.status !== 'done' && task.status !== 'review' && (
         <div className="esc-banner">Escalated to the manager {fmtStamp(task.escalated_at)} — {daysBetween(task.due_date, today())} days past its deadline.</div>
       )}
       {readOnly && (
         <div className="helper-banner">You're helping on this task. You can tick steps, add files and comment. {firstName(nameOf(task!.assignee_id))} marks it done.</div>
       )}
-      {task && !task.acknowledged_at && task.assignee_id === me.id && (
+      {task && !task.acknowledged_at && task.assignee_id === me.id && (task.due_date ? (
         <div className="ack-banner">
           <span><strong>{firstName(nameOf(task.created_by))}</strong> gave you this task. Let them know you've seen it.</span>
           <button className="btn primary sm" onClick={gotIt}>Got it</button>
         </div>
-      )}
+      ) : (
+        <div className="ack-banner pick">
+          <span><strong>{firstName(nameOf(task.created_by))}</strong> gave you this without a deadline — pick your date{task.latest_by ? <> (any day up to <strong>{fmtDay(task.latest_by)}</strong>)</> : ''}, then press Got it.</span>
+          <div className="row gap">
+            <input type="date" value={form.due_date ?? ''} min={today()} max={task.latest_by ?? undefined} aria-label="Your date"
+              onChange={e => set('due_date', e.target.value || null)} />
+            <button className="btn primary sm" disabled={!form.due_date} onClick={gotIt}>Got it</button>
+          </div>
+        </div>
+      ))}
       {task?.status === 'review' && (
         <div className="review-banner">
           {canCheck(task) ? (
@@ -384,12 +412,25 @@ export default function TaskDrawer() {
             <div className="static-field"><Avatar p={person(form.assignee_id)} size={20} /> {person(form.assignee_id)?.full_name}</div>
           )}
         </label>
-        <label className="field">
-          <span>{isProject ? 'End date' : 'Deadline'} {task && form.due_date === task.due_date && (
+        <div className="field deadline-field">
+          <span>{isProject ? 'End date' : 'Deadline'} {task && hasDate(task) && form.due_date === task.due_date && (
             <em className={overdue ? 'danger' : 'muted'}>· {overdue ? `${daysBetween(task.due_date, today())}d overdue` : fmtDue(task.due_date)}</em>
           )}</span>
-          <input type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} required disabled={readOnly} />
-        </label>
+          {ownerPicks && !pickingMine ? (
+            <div className="static-field no-date" title="The owner picks the date when they press Got it">No date yet — {form.assignee_id === me.id ? 'you pick' : `${ownerFirst} picks`} it</div>
+          ) : (
+            <input type="date" value={form.due_date ?? ''} aria-label={isProject ? 'End date' : 'Deadline'}
+              min={pickingMine ? today() : undefined} max={pickingMine ? task?.latest_by ?? undefined : undefined}
+              onChange={e => set('due_date', e.target.value || (pickingMine ? null : form.due_date))} required disabled={readOnly} />
+          )}
+          {openAllowed && (
+            <label className="check-label let-pick">
+              <input type="checkbox" checked={ownerPicks}
+                onChange={e => setForm(f => ({ ...f, due_date: e.target.checked ? null : (task?.due_date ?? today()), latest_by: e.target.checked ? f.latest_by ?? null : null }))} />
+              {ownerFirst || 'They'} pick{form.assignee_id === me.id ? '' : 's'} the date
+            </label>
+          )}
+        </div>
         <label className="field">
           <span>Priority</span>
           <select value={form.priority} onChange={e => set('priority', e.target.value as TaskDraft['priority'])} disabled={readOnly}>
@@ -397,6 +438,22 @@ export default function TaskDrawer() {
           </select>
         </label>
       </div>
+
+      {ownerPicks && !pickingMine && (
+        <div className="latest-row">
+          {openAllowed ? (
+            <label className="field">
+              <span>Latest date {ownerFirst || 'they'} can pick <em className="muted">· optional</em></span>
+              <input type="date" value={form.latest_by ?? ''} min={today()} aria-label="Latest date"
+                onChange={e => set('latest_by', e.target.value || null)} />
+            </label>
+          ) : null}
+          <div className="field-note">
+            {form.latest_by ? <>{ownerFirst} picks any day up to <strong>{fmtDay(form.latest_by)}</strong>. </> : <>{ownerFirst} picks any day. </>}
+            They choose it when they press <strong>Got it</strong>{isNew ? '' : ' in their New tab'}, and you're told the date.
+          </div>
+        </div>
+      )}
 
       <div className="field outside-field">
         <span>Given to someone outside the app</span>
@@ -429,7 +486,7 @@ export default function TaskDrawer() {
         );
       })()}
 
-      {task && isProject && <ProjectStatus task={task} />}
+      {task && isProject && hasDate(task) && <ProjectStatus task={task} />}
 
       <div className="fields">
         {!isProject && <label className="field">
@@ -486,10 +543,10 @@ export default function TaskDrawer() {
         </div>
       )}
 
-      {task && task.due_moves > 0 && (
+      {task && hasDate(task) && task.due_moves > 0 && (
         <div className="due-history">
           <button type="button" className="link" onClick={() => setShowMoves(v => !v)}>
-            Deadline moved {task.due_moves}× · first set for {fmtDay(task.original_due ?? task.due_date)} {showMoves ? '▴' : '▾'}
+            Deadline moved {task.due_moves}× · first set for {fmtDay(task.original_due ?? task.due_date ?? today())} {showMoves ? '▴' : '▾'}
           </button>
           {showMoves && <DueMovesList task={task} moves={history.filter(a => a.kind === 'due_date').reverse()} />}
         </div>
@@ -524,7 +581,7 @@ export default function TaskDrawer() {
       </label>
 
       {isProject
-        ? <Stages list={stages} ownerId={form.assignee_id} canRun={isNew || (!!task && !readOnly)} endDate={form.due_date} />
+        ? <Stages list={stages} ownerId={form.assignee_id} canRun={isNew || (!!task && !readOnly)} endDate={form.due_date ?? today()} />
         : <Checklist list={steps} />}
       <TaskFiles files={files} canRemove={canRemoveFile} />
 
@@ -557,13 +614,13 @@ export default function TaskDrawer() {
             {task!.sent_back_n > 0 && <> · sent back {task!.sent_back_n}×</>}
           </div>
 
-          {panels.map(p => {
+          {task && hasDate(task) && panels.map(p => {
             const Panel = p.component;
-            return <div key={p.app} className="feature-slot"><Panel task={task!} /></div>;
+            return <div key={p.app} className="feature-slot"><Panel task={task} /></div>;
           })}
-          {features.map(f => {
+          {task && hasDate(task) && features.map(f => {
             const Panel = f.taskPanel!;
-            return <div key={f.key} className="feature-slot"><Panel task={task!} /></div>;
+            return <div key={f.key} className="feature-slot"><Panel task={task} /></div>;
           })}
 
           {writesDaily && (

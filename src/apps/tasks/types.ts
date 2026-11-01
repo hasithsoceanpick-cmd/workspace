@@ -13,7 +13,9 @@ export interface Task {
   created_by: string | null;
   status: Status;
   priority: Priority;
-  due_date: string; // YYYY-MM-DD
+  due_date: string; // YYYY-MM-DD (see UndatedTask for work given without a deadline)
+  /** given without a deadline: the latest date its owner may pick (empty = any date) */
+  latest_by: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -54,6 +56,15 @@ export interface Task {
   health_at: string | null;
   health_by: string | null;
 }
+
+/**
+ * Work given without a deadline: its owner picks the date when they press Got it (it waits in their New tab until then).
+ * Everywhere else in the app works on dated tasks (`Task`); only the New tab, the task lists' "No date yet" group, the
+ * Who's on what board, the task panel and the Excel export handle these.
+ */
+export type UndatedTask = Omit<Task, 'due_date'> & { due_date: null };
+export type AnyTask = Task | UndatedTask;
+export const hasDate = (t: AnyTask): t is Task => t.due_date !== null;
 
 /** Someone without a login that work is given to — a bank officer, a supplier — for follow-up */
 export interface Contact {
@@ -132,7 +143,7 @@ export interface TaskActivity {
   department_id: string;
   actor_id: string | null;
   kind: 'created' | 'status' | 'due_date' | 'assignee' | 'edited' | 'comment' | 'helper_added' | 'helper_removed' | 'step' | 'repeated'
-    | 'sent_back' | 'acknowledged' | 'daily_update' | 'health';
+    | 'sent_back' | 'acknowledged' | 'daily_update' | 'health' | 'date_set';
   old_value: string | null;
   new_value: string | null;
   created_at: string;
@@ -144,7 +155,9 @@ export interface TaskDraft {
   assignee_id: string;
   status: Status;
   priority: Priority;
-  due_date: string;
+  /** empty = given without a deadline: the owner picks it (only for work given to someone else) */
+  due_date: string | null;
+  latest_by?: string | null;
   repeat?: Repeat | null;
   needs_check?: boolean;
   remind_days?: number | null;

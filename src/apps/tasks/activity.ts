@@ -16,7 +16,10 @@ export function describe(a: Activity, nameOf: (id: string | null) => string): { 
       if (a.new_value === 'doing') return { verb: 'started' };
       if (a.new_value === 'waiting') return { verb: 'marked waiting', tone: 'warn' };
       return { verb: `set to ${statusLabel(a.new_value ?? '')}` };
+    case 'date_set':
+      return { verb: 'set the deadline', detail: a.new_value ? fmtDay(a.new_value) : undefined, tone: 'good' };
     case 'due_date':
+      if (!a.new_value) return { verb: 'left the date to the owner', detail: a.old_value ? `was ${fmtDay(a.old_value)}` : undefined };
       return {
         verb: 'moved deadline',
         detail: `${a.old_value ? fmtDay(a.old_value) : '—'} → ${a.new_value ? fmtDay(a.new_value) : '—'}`,

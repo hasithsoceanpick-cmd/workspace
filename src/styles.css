@@ -1453,3 +1453,27 @@ button.wcard:hover { border-color: var(--border-strong); background: var(--surfa
   .focus-live.foc { background: color-mix(in srgb, #f87171 16%, var(--surface)); }
   .focus-alert { border-left-color: #f87171; }
 }
+
+/* ============ Work given without a deadline (round 13) ============ */
+.notice-row.k-date_set .n-dot { background: var(--good); }
+.pill.no-date { background: color-mix(in srgb, #0d9488 13%, var(--surface)); color: #0f766e; border-color: transparent; }
+.no-date { color: #0f766e; font-weight: 600; }
+.static-field.no-date { height: auto; min-height: 34px; font-size: 13px; line-height: 1.3; }
+.deadline-field .let-pick { margin-top: 4px; white-space: normal; }
+.latest-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px 14px; margin: -6px 0 12px; }
+.latest-row .field { margin: 0; min-width: 190px; }
+.latest-row .field-note { margin: 0; flex: 1; min-width: 220px; }
+.ack-banner.pick { flex-wrap: wrap; }
+.ack-banner.pick input[type=date] { height: 32px; }
+.new-card.undated { border-color: color-mix(in srgb, #0d9488 40%, var(--border)); }
+.new-pick { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px;
+  border-radius: 8px; background: color-mix(in srgb, #0d9488 8%, var(--surface)); font-size: 13px; }
+.new-pick input[type=date] { height: 32px; }
+.task-row.undated { cursor: pointer; }
+.task-row.undated .check { border-style: dashed; cursor: default; }
+.nodate-group h2 .group-note { font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.bcard.undated { border-style: dashed; border-color: color-mix(in srgb, #0d9488 45%, var(--border)); }
+@media (prefers-color-scheme: dark) {
+  .pill.no-date { color: #5eead4; background: color-mix(in srgb, #14b8a6 18%, var(--surface)); }
+  .no-date { color: #5eead4; }
+}

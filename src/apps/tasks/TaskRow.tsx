@@ -1,7 +1,7 @@
 import type { MouseEvent } from 'react';
 import { useTaskApp } from './store';
-import type { Task } from './types';
-import { daysBetween, fmtDue, today } from '../../lib/dates';
+import type { Task, UndatedTask } from './types';
+import { daysBetween, fmtDay, fmtDue, today } from '../../lib/dates';
 import { firstName } from '../../lib/labels';
 import { finished, isDaily, isLate, repeatLabel, statusLabel } from './labels';
 import MovedBadge from './DueHistory';
@@ -86,6 +86,39 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
         )}
         {finished(t) ? '' : overdue ? `${fmtDue(t.due_date)} · ${daysBetween(t.due_date, today())}d late` : fmtDue(t.due_date)}
       </span>
+    </div>
+  );
+}
+
+/** Work given without a deadline, waiting for its owner to pick a date (shown to whoever gave it, and managers). */
+export function UndatedRow({ t, showWho = true }: { t: UndatedTask; showWho?: boolean }) {
+  const { openTask, person, me } = useTaskApp();
+  const who = person(t.assignee_id);
+  const name = t.assignee_id === me.id ? 'You' : firstName(who?.full_name ?? '');
+  return (
+    <div className="task-row undated" onClick={() => openTask(t.id)} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') openTask(t.id); }}>
+      <span className="check locked" aria-hidden title="No date yet" />
+      <div className="tr-main">
+        <AssignedBy t={t} />
+        <OutsideWith t={t} />
+        <div className="tr-title">{t.title}</div>
+        <div className="tr-meta">
+          <span className="pill no-date" title={`${name} pick${t.assignee_id === me.id ? '' : 's'} the date when ${t.assignee_id === me.id ? 'you press' : 'they press'} Got it`}>
+            No date yet{t.latest_by ? ` · by ${fmtDay(t.latest_by)}` : ''}
+          </span>
+          {t.assignee_id !== me.id && <span className="pill unseen">Not opened yet</span>}
+          {t.priority === 'high' && <span className="pill high">High</span>}
+          {t.notes && <span className="muted" title="Has notes">≡</span>}
+        </div>
+      </div>
+      {showWho && (
+        <span className="tr-who">
+          <Avatar p={who} size={22} />
+          <span className="hide-sm">{firstName(who?.full_name ?? '')}</span>
+        </span>
+      )}
+      <span className="tr-due muted">{name} pick{t.assignee_id === me.id ? '' : 's'}</span>
     </div>
   );
 }

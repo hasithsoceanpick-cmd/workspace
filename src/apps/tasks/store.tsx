@@ -3,7 +3,7 @@ import { supabase } from '../../supabase';
 import { usePlatform } from '../../platform/store';
 import { removeFiles } from '../../platform/files';
 import type { Profile } from '../../platform/types';
-import type { ChecklistItem, Contact, Task, TaskDraft, TaskFollow, TaskHelper } from './types';
+import { hasDate, type AnyTask, type ChecklistItem, type Contact, type Task, type TaskDraft, type TaskFollow, type TaskHelper, type UndatedTask } from './types';
 import { isWeekday, prevWorkday, today } from '../../lib/dates';
 
 type DrawerState = { mode: 'edit'; id: number } | { mode: 'new'; defaults: Partial<TaskDraft> } | null;
@@ -18,38 +18,44 @@ interface TasksStore {
   /** People whose work I can see and assign to (me first) */
   team: Profile[];
   canAssignTo: (id: string) => boolean;
+  /** dated tasks — everything the lists, Today, calendar and reports work on */
   tasks: Task[];
+  /** work given without a deadline, still waiting for its owner to pick a date */
+  undated: UndatedTask[];
+  /** any task by id, dated or not */
+  findTask: (id: number) => AnyTask | undefined;
   loaded: boolean;
   refresh: () => Promise<void>;
-  createTask: (d: TaskDraft) => Promise<Task | null>;
-  updateTask: (id: number, patch: Partial<TaskDraft>) => Promise<Task | null>;
+  createTask: (d: TaskDraft) => Promise<AnyTask | null>;
+  updateTask: (id: number, patch: Partial<TaskDraft>) => Promise<AnyTask | null>;
   deleteTask: (id: number) => Promise<boolean>;
-  canDelete: (t: Task) => boolean;
+  canDelete: (t: AnyTask) => boolean;
   /** helpers per task id */
   helpersOf: (taskId: number) => string[];
   /** I'm only a helper on this task (can't change it, can't mark it done) */
-  helperOnly: (t: Task) => boolean;
+  helperOnly: (t: AnyTask) => boolean;
   /** People I may add as helpers to this task (managers/seniors only) */
   helperCandidates: (t: Pick<Task, 'assignee_id'>) => Profile[];
   addHelper: (taskId: number, userId: string) => Promise<boolean>;
   removeHelper: (taskId: number, userId: string) => Promise<boolean>;
   /** May I sign this task off? (whoever gave it, a manager, the admin — never its owner) */
-  canCheck: (t: Task) => boolean;
+  canCheck: (t: AnyTask) => boolean;
   /** Who is asked to sign it off */
-  checkerOf: (t: Task) => Profile | undefined;
-  /** "Got it": the owner has seen a task someone gave them */
-  acknowledge: (id: number) => Promise<void>;
+  checkerOf: (t: AnyTask) => Profile | undefined;
+  /** "Got it": the owner has seen a task someone gave them (work given without a deadline needs the date they pick) */
+  acknowledge: (id: number, due?: string) => Promise<boolean>;
   sendBack: (id: number, reason: string) => Promise<boolean>;
   /** Given to me by someone else and I haven't pressed Got it yet: lives only in the New tab */
-  inInbox: (t: Task) => boolean;
-  inbox: Task[];
+  inInbox: (t: AnyTask) => boolean;
+  /** my New tab: dated ones first by deadline, then those waiting for my date */
+  inbox: AnyTask[];
   /** my pin / follow marks */
   marks: (taskId: number) => { pinned: boolean; following: boolean };
   setMark: (taskId: number, patch: { pinned?: boolean; following?: boolean }) => Promise<void>;
   /** Daily updates: has one been written for this task for that day (today or the last weekday)? */
   updatePosted: (taskId: number, day: string) => boolean;
   /** Needs today's daily update and hasn't got one yet */
-  updateDue: (t: Task) => boolean;
+  updateDue: (t: AnyTask) => boolean;
   /** the owner writes a Daily update (for today, or the last weekday) */
   postUpdate: (taskId: number, body: string, day?: string) => Promise<boolean>;
   /** people outside the app (this department's list, including ones taken off it) */
@@ -85,7 +91,10 @@ const POLL_MS = 45_000;
 
 export function TasksProvider({ children }: { children: ReactNode }) {
   const { me, isAdmin, dept, deptPeople, person, userHasApp, fail, toast, refreshNotices } = usePlatform();
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [all, setTasks] = useState<AnyTask[]>([]);
+  const tasks = useMemo(() => all.filter(hasDate), [all]);
+  const undated = useMemo(() => all.filter((t): t is UndatedTask => !hasDate(t)), [all]);
+  const findTask = useCallback((id: number) => all.find(t => t.id === id), [all]);
   const [helpers, setHelpers] = useState<TaskHelper[]>([]);
   const [steps, setSteps] = useState<ChecklistItem[]>([]);
   const [follows, setFollows] = useState<TaskFollow[]>([]);
@@ -114,7 +123,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
       supabase.from('task_contacts').select('*').eq('department_id', deptId).order('name'),
     ]);
     if (t.error) return fail(t.error);
-    setTasks(t.data as Task[]);
+    setTasks(t.data as AnyTask[]);
     if (h.data) setHelpers(h.data as TaskHelper[]);
     if (f.data) setFollows(f.data as TaskFollow[]);
     if (c.data) setContacts(c.data as Contact[]);
@@ -161,10 +170,10 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const helpersOf = useCallback((id: number) => helpersByTask.get(id) ?? [], [helpersByTask]);
 
   // Mirrors the database rule: owner, creator, managers, and seniors (for members' work) run a task.
-  const runsTask = useCallback((t: Task) =>
+  const runsTask = useCallback((t: AnyTask) =>
     fullView || t.assignee_id === me.id || t.created_by === me.id ||
     (myRole === 'senior' && person(t.assignee_id)?.role === 'member'), [fullView, me.id, myRole, person]);
-  const helperOnly = useCallback((t: Task) => !runsTask(t), [runsTask]);
+  const helperOnly = useCallback((t: AnyTask) => !runsTask(t), [runsTask]);
 
   const helperCandidates = useCallback((t: Pick<Task, 'assignee_id'>) => {
     if (!isLead) return [];
@@ -218,35 +227,36 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   const createTask = useCallback(async (d: TaskDraft) => {
     const { data, error } = await supabase.from('tasks').insert(d).select().single();
     if (error) { fail(error); return null; }
-    const t = data as Task;
+    const t = data as AnyTask;
     setTasks(ts => [...ts, t]);
     return t;
   }, [fail]);
 
   const updateTask = useCallback(async (id: number, patch: Partial<TaskDraft>) => {
-    const prev = tasks;
-    setTasks(ts => ts.map(t => (t.id === id ? { ...t, ...patch } : t)));
+    const prev = all;
+    setTasks(ts => ts.map(t => (t.id === id ? { ...t, ...patch } as AnyTask : t)));
     const { data, error } = await supabase.from('tasks').update(patch).eq('id', id).select().maybeSingle();
     if (error || !data) {
       setTasks(prev);
       fail(error ?? new Error("You don't have permission to change that task."));
       return null;
     }
-    const t = data as Task;
+    const t = data as AnyTask;
     setTasks(ts => ts.map(x => (x.id === id ? t : x)));
     const was = prev.find(x => x.id === id);
     // reassigned, or a repeating task finished (its next one was just created): reload the list
     if (patch.assignee_id || (t.status === 'done' && was?.status !== 'done' && was?.repeat && !was.next_task_id)) refresh();
     refreshNotices();
     return t;
-  }, [tasks, fail, refreshNotices, refresh]);
+  }, [all, fail, refreshNotices, refresh]);
 
-  const canDelete = useCallback((t: Task) => fullView || t.created_by === me.id, [fullView, me.id]);
+  const canDelete = useCallback((t: AnyTask) => fullView || t.created_by === me.id, [fullView, me.id]);
 
-  const inInbox = useCallback((t: Task) =>
+  const inInbox = useCallback((t: AnyTask) =>
     t.assignee_id === me.id && !t.acknowledged_at && t.created_by !== me.id && t.status !== 'done' && t.status !== 'review',
   [me.id]);
-  const inbox = useMemo(() => tasks.filter(inInbox).sort((a, b) => a.due_date.localeCompare(b.due_date)), [tasks, inInbox]);
+  const inbox = useMemo(() => all.filter(inInbox)
+    .sort((a, b) => (a.due_date ?? '9999').localeCompare(b.due_date ?? '9999') || a.id - b.id), [all, inInbox]);
 
   const marks = useCallback((id: number) => {
     const f = follows.find(x => x.task_id === id);
@@ -263,23 +273,29 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     if (res.error) { fail(res.error); refresh(); }
   }, [follows, me.id, deptId, fail, refresh]);
 
-  const canCheck = useCallback((t: Task) =>
+  const canCheck = useCallback((t: AnyTask) =>
     t.assignee_id !== me.id && (isAdmin || (inDept && (t.created_by === me.id || myRole === 'manager'))),
   [me.id, isAdmin, inDept, myRole]);
 
-  const checkerOf = useCallback((t: Task) => {
+  const checkerOf = useCallback((t: AnyTask) => {
     const giver = person(t.created_by);
     if (giver?.active) return giver;           // (in another department only when it's the admin)
     return deptPeople.find(p => p.role === 'manager');
   }, [person, deptPeople]);
 
-  const acknowledge = useCallback(async (id: number) => {
+  const acknowledge = useCallback(async (id: number, due?: string) => {
     const now = new Date().toISOString();
-    setTasks(ts => ts.map(t => (t.id === id ? { ...t, acknowledged_at: t.acknowledged_at ?? now } : t)));
-    const { data, error } = await supabase.from('tasks').update({ acknowledged_at: now }).eq('id', id).select().maybeSingle();
-    if (error) return fail(error);
-    if (data) setTasks(ts => ts.map(t => (t.id === id ? data as Task : t)));
-  }, [fail]);
+    const t = all.find(x => x.id === id);
+    if (t && !t.due_date && !due) { toast('Pick a date first.', 'error'); return false; }
+    const patch = due ? { acknowledged_at: now, due_date: due } : { acknowledged_at: now };
+    const prev = all;
+    setTasks(ts => ts.map(x => (x.id === id ? { ...x, ...patch, acknowledged_at: x.acknowledged_at ?? now } as AnyTask : x)));
+    const { data, error } = await supabase.from('tasks').update(patch).eq('id', id).select().maybeSingle();
+    if (error) { setTasks(prev); fail(error); return false; }
+    if (data) setTasks(ts => ts.map(x => (x.id === id ? data as AnyTask : x)));
+    if (due) refreshNotices();
+    return true;
+  }, [all, fail, toast, refreshNotices]);
 
   const sendBack = useCallback(async (id: number, reason: string) => {
     const { error } = await supabase.rpc('tasks_send_back', { p_task: id, p_reason: reason });
@@ -290,7 +306,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
   }, [fail, refresh, refreshNotices]);
 
   const deleteTask = useCallback(async (id: number) => {
-    const t = tasks.find(x => x.id === id);
+    const t = all.find(x => x.id === id);
     if (!t || !canDelete(t)) { toast('You can only delete tasks you created.', 'error'); return false; }
     // stored files go first: once the task is gone, nobody may touch its folder any more
     const { data: files } = await supabase.from('task_attachments').select('path').eq('task_id', id).eq('kind', 'file');
@@ -300,10 +316,10 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     if (count === 0) { toast('You can only delete tasks you created.', 'error'); return false; }
     setTasks(ts => ts.filter(x => x.id !== id));
     return true;
-  }, [tasks, canDelete, fail, toast]);
+  }, [all, canDelete, fail, toast]);
 
   const updatePosted = useCallback((id: number, day: string) => posted.has(`${id}:${day}`), [posted]);
-  const updateDue = useCallback((t: Task) => {
+  const updateDue = useCallback((t: AnyTask) => {
     const td = today();
     return t.daily_update && !!t.daily_update_from && t.daily_update_from <= td && isWeekday(td)
       && t.status !== 'done' && t.status !== 'review' && !posted.has(`${t.id}:${td}`);
@@ -328,7 +344,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     return saved;
   }, [deptId, fail]);
   const removeContact = useCallback(async (id: number) => {
-    const used = tasks.some(t => t.contact_id === id);
+    const used = all.some(t => t.contact_id === id);
     if (!used) {
       const { error, count } = await supabase.from('task_contacts').delete({ count: 'exact' }).eq('id', id);
       if (!error && count) { setContacts(cs => cs.filter(x => x.id !== id)); return 'deleted' as const; }
@@ -337,10 +353,10 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     if (error || !data) { fail(error ?? new Error('Only whoever added them, or a manager / senior executive, can remove them.')); return null; }
     setContacts(cs => cs.map(x => (x.id === id ? data as Contact : x)));
     return 'hidden' as const;
-  }, [tasks, fail]);
+  }, [all, fail]);
 
   const value: TasksStore = {
-    inDept, fullView, isLead, team, canAssignTo, tasks, loaded, refresh,
+    inDept, fullView, isLead, team, canAssignTo, tasks, undated, findTask, loaded, refresh,
     createTask, updateTask, deleteTask, canDelete,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper,
     progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack, inInbox, inbox, marks, setMark,
