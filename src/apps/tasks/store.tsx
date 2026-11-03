@@ -30,6 +30,10 @@ interface TasksStore {
   updateTask: (id: number, patch: Partial<TaskDraft>) => Promise<AnyTask | null>;
   deleteTask: (id: number) => Promise<boolean>;
   canDelete: (t: AnyTask) => boolean;
+  /** may I move this task to No date? (my own, work I gave, or as a manager; never projects, repeats or finished work) */
+  canUndate: (t: AnyTask) => boolean;
+  /** move several tasks to No date at once; returns how many moved */
+  undateTasks: (ids: number[]) => Promise<number>;
   /** helpers per task id */
   helpersOf: (taskId: number) => string[];
   /** I'm only a helper on this task (can't change it, can't mark it done) */
@@ -277,6 +281,21 @@ export function TasksProvider({ children }: { children: ReactNode }) {
     t.assignee_id !== me.id && (isAdmin || (inDept && (t.created_by === me.id || myRole === 'manager'))),
   [me.id, isAdmin, inDept, myRole]);
 
+  // mirrors the database: whoever made the task, or whoever may sign it off (the giver, a manager, the admin)
+  const canUndate = useCallback((t: AnyTask) =>
+    t.nature !== 'project' && !t.repeat && t.status !== 'done' && t.status !== 'review'
+    && (t.created_by === me.id || canCheck(t)), [me.id, canCheck]);
+  const undateTasks = useCallback(async (ids: number[]) => {
+    if (!ids.length) return 0;
+    const prev = all;
+    setTasks(ts => ts.map(t => (ids.includes(t.id) ? { ...t, due_date: null } as AnyTask : t)));
+    const { data, error } = await supabase.from('tasks').update({ due_date: null }).in('id', ids).select('id');
+    if (error) { setTasks(prev); fail(error); return 0; }
+    await refresh();
+    refreshNotices();
+    return (data ?? []).length;
+  }, [all, fail, refresh, refreshNotices]);
+
   const checkerOf = useCallback((t: AnyTask) => {
     const giver = person(t.created_by);
     if (giver?.active) return giver;           // (in another department only when it's the admin)
@@ -357,7 +376,7 @@ export function TasksProvider({ children }: { children: ReactNode }) {
 
   const value: TasksStore = {
     inDept, fullView, isLead, team, canAssignTo, tasks, undated, findTask, loaded, refresh,
-    createTask, updateTask, deleteTask, canDelete,
+    createTask, updateTask, deleteTask, canDelete, canUndate, undateTasks,
     helpersOf, helperOnly, helperCandidates, addHelper, removeHelper,
     progressOf, refreshChecklist, canCheck, checkerOf, acknowledge, sendBack, inInbox, inbox, marks, setMark,
     updatePosted, updateDue, postUpdate, contacts, contactOf, saveContact, removeContact,

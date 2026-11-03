@@ -6,19 +6,22 @@ import { ago, today } from '../../../lib/dates';
 import { firstName, initials } from '../../../lib/labels';
 import { finished, finishedAt, isLate } from '../labels';
 import TaskRow from '../TaskRow';
+import FollowUpList, { type FollowNote } from '../FollowUpList';
 import ContactForm from '../ContactForm';
 import type { Contact, Task } from '../types';
 
-type Note = { task_id: number; body: string; created_at: string; author_id: string | null };
+type Note = FollowNote;
 
 /**
  * Follow-ups: work given to people outside the app (no login) — a bank officer, a supplier — person by person,
  * with what's open, what's late, the last note, and the finished record.
  */
 export default function FollowUpsPage({ params }: { params: Params }) {
-  const { me, isLead, tasks, contacts, newTask, removeContact, saveContact, toast, person, loaded } = useTaskApp();
+  const { me, isLead, tasks, undated, contacts, newTask, openTask, removeContact, saveContact, toast, person, loaded } = useTaskApp();
   const td = today();
   const scope = isLead && params.show === 'all' ? 'all' : 'mine';
+  // one list of every follow-up (default), or a card per person
+  const view = params.view === 'cards' ? 'cards' : 'list';
   const [q, setQ] = useState('');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<number | null>(null);
@@ -27,9 +30,12 @@ export default function FollowUpsPage({ params }: { params: Params }) {
   const [notes, setNotes] = useState<Map<number, Note>>(new Map());
 
   const withContact = useMemo(() => tasks.filter(t => t.contact_id && (scope === 'all' || t.assignee_id === me.id)), [tasks, scope, me.id]);
+  // the list also shows any without a date yet
+  const allWithContact = useMemo(() => [...withContact, ...undated.filter(t => t.contact_id && (scope === 'all' || t.assignee_id === me.id))],
+    [withContact, undated, scope, me.id]);
 
   // the latest comment on each of these tasks: "last follow-up"
-  const ids = useMemo(() => withContact.map(t => t.id).sort((a, b) => a - b).join(','), [withContact]);
+  const ids = useMemo(() => allWithContact.map(t => t.id).sort((a, b) => a - b).join(','), [allWithContact]);
   useEffect(() => {
     if (!ids) { setNotes(new Map()); return; }
     let stop = false;
@@ -139,7 +145,7 @@ export default function FollowUpsPage({ params }: { params: Params }) {
   };
 
   return (
-    <div className="page followups">
+    <div className={`page followups${view === 'list' ? ' wide' : ''}`}>
       <div className="page-head">
         <div>
           <h1>Follow-ups</h1>
@@ -149,6 +155,10 @@ export default function FollowUpsPage({ params }: { params: Params }) {
           </div>
         </div>
         <div className="filters">
+          <div className="seg small" role="tablist" aria-label="View">
+            <button className={`seg-btn ${view === 'list' ? 'on' : ''}`} onClick={() => setParams({ view: '' })}>List</button>
+            <button className={`seg-btn ${view === 'cards' ? 'on' : ''}`} onClick={() => setParams({ view: 'cards' })}>By person</button>
+          </div>
           <input type="search" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search follow-ups" />
           {isLead && (
             <select value={scope} onChange={e => setParams({ show: e.target.value === 'all' ? 'all' : '' })} aria-label="Whose follow-ups">
@@ -167,7 +177,10 @@ export default function FollowUpsPage({ params }: { params: Params }) {
         </div>
       )}
 
-      {!loaded ? <div className="empty">Loading…</div> : listed.length === 0 && !adding ? (
+      {loaded && view === 'list' && (listed.length > 0 || allWithContact.length > 0) ? (
+        <FollowUpList params={params} tasks={allWithContact} contacts={contacts} notes={notes} q={q}
+          showOwner={scope === 'all'} onOpen={openTask} />
+      ) : !loaded ? <div className="empty">Loading…</div> : listed.length === 0 && !adding ? (
         <div className="empty">
           {q ? 'No one matches.' : <>Nobody yet. Add someone with <strong>+ Add person</strong>, or pick <em>Given to someone outside the app</em> in a task.</>}
         </div>
@@ -175,7 +188,7 @@ export default function FollowUpsPage({ params }: { params: Params }) {
         <div className="fu-grid">{listed.map(card)}</div>
       )}
 
-      {removed.length > 0 && (
+      {view === 'cards' && removed.length > 0 && (
         <div className="fu-removed">
           <button className="link" onClick={() => setShowRemoved(v => !v)}>
             {showRemoved ? 'Hide' : 'Show'} {removed.length} taken off the list

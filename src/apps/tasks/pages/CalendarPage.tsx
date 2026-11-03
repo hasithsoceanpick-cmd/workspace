@@ -8,12 +8,13 @@ import { firstName } from '../../../lib/labels';
 import type { Task } from '../types';
 import { finished } from '../labels';
 import Avatar from '../../../platform/Avatar';
+import NoDateTray from '../NoDateTray';
 
 const MAX_IN_CELL = 4;
 const prioRank = { high: 0, normal: 1, low: 2 } as const;
 
 export default function CalendarPage({ params }: { params: Params }) {
-  const { me, isLead, team, tasks, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly, inInbox } = useTaskApp();
+  const { me, isLead, team, tasks, findTask, person, openTask, newTask, updateTask, canAssignTo, toast, helpersOf, helperOnly, inInbox } = useTaskApp();
   const view = params.view === 'week' ? 'week' : 'month';
   const anchor = params.d || today();
   const td = today();
@@ -61,7 +62,7 @@ export default function CalendarPage({ params }: { params: Params }) {
     e.preventDefault();
     setOver(null);
     const [rawId, fromHelperRow] = e.dataTransfer.getData('text/plain').split(':');
-    const t = tasks.find(x => x.id === Number(rawId));
+    const t = findTask(Number(rawId));           // from the calendar, or from the No date list
     if (!t) return;
     const patch: { due_date?: string; assignee_id?: string } = {};
     if (t.due_date !== date) patch.due_date = date;
@@ -75,7 +76,7 @@ export default function CalendarPage({ params }: { params: Params }) {
       const parts = [];
       if (patch.assignee_id) parts.push(`to ${firstName(person(patch.assignee_id)?.full_name ?? '')}`);
       if (patch.due_date) parts.push(`to ${fmtDay(patch.due_date)}`);
-      toast(`Moved ${parts.join(', ')}`);
+      toast(t.due_date ? `Moved ${parts.join(', ')}` : `Scheduled for ${fmtDay(date)}${patch.assignee_id ? `, ${parts[0]}` : ''}`);
     }
   }
   const dropProps = (key: string, date: string, personId?: string) => ({
@@ -140,6 +141,8 @@ export default function CalendarPage({ params }: { params: Params }) {
         </div>
       )}
 
+      <div className="cal-layout">
+      <div className="cal-main">
       {view === 'month' ? (
         <div className="month">
           {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => <div key={d} className="month-dow">{d}</div>)}
@@ -148,7 +151,7 @@ export default function CalendarPage({ params }: { params: Params }) {
             const inMonth = fromISO(d).getMonth() === fromISO(anchor).getMonth();
             const wkend = ['Sat', 'Sun'].includes(weekdayShort(d));
             return (
-              <div key={d}
+              <div key={d} data-day={d}
                 className={`mcell ${inMonth ? '' : 'out'} ${d === td ? 'today' : ''} ${wkend ? 'wkend' : ''} ${over === d ? 'over' : ''}`}
                 onClick={() => newTask({ due_date: d, assignee_id: selected.length === 1 ? selected[0] : undefined })}
                 {...dropProps(d, d)}
@@ -193,7 +196,7 @@ export default function CalendarPage({ params }: { params: Params }) {
                   const key = `${pid}|${d}`;
                   const items = (byDate.get(d) ?? []).filter(t => t.assignee_id === pid || helpersOf(t.id).includes(pid));
                   return (
-                    <div key={key} className={`wcell ${d === td ? 'today' : ''} ${over === key ? 'over' : ''}`}
+                    <div key={key} data-day={d} data-person={pid} className={`wcell ${d === td ? 'today' : ''} ${over === key ? 'over' : ''}`}
                       onClick={() => newTask({ due_date: d, assignee_id: pid })}
                       {...dropProps(key, d, pid)}>
                       {items.map(t => chip(t, pid))}
@@ -205,7 +208,10 @@ export default function CalendarPage({ params }: { params: Params }) {
           </div>
         </div>
       )}
-      <p className="hint">Click a day to add a task · drag a task to move its deadline{isLead && view === 'week' ? ' or hand it to someone else' : ''} · dashed = helping on.</p>
+      </div>
+      <NoDateTray selected={selected} multi={multi} />
+      </div>
+      <p className="hint">Click a day to add a task · drag a task to move its deadline{isLead && view === 'week' ? ' or hand it to someone else' : ''} · drag it into No date to take the date off · dashed = helping on.</p>
     </div>
   );
 }

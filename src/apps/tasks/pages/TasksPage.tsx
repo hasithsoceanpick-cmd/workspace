@@ -52,10 +52,11 @@ export default function TasksPage({ params }: { params: Params }) {
 
   const matches = (t: Pick<Task, 'title' | 'notes'>) => !q || t.title.toLowerCase().includes(q) || t.notes.toLowerCase().includes(q);
 
-  // given without a deadline, still waiting for the owner's date (my own ones are in my New tab)
+  // no date: my own (and ones moved there), and work I gave that waits for its owner's date (mine wait in the New tab)
   const noDate = useMemo(() => show !== 'open' ? [] : undated.filter(t => {
-    if (inInbox(t) || !matches(t)) return false;
-    if (who === 'me' || who === 'byme') return t.created_by === me.id;
+    if (inInbox(t) || !matches(t) || t.status === 'done' || t.status === 'review') return false;
+    if (who === 'me') return t.assignee_id === me.id || (t.created_by === me.id && !t.acknowledged_at);
+    if (who === 'byme') return t.created_by === me.id && t.assignee_id !== me.id;
     if (who === 'all') return true;
     if (who === 'following') return marks(t.id).following;
     return t.assignee_id === who;
@@ -208,8 +209,8 @@ export default function TasksPage({ params }: { params: Params }) {
 
       {loaded && noDate.length > 0 && (
         <section className="group nodate-group">
-          <h2>No date yet <span className="count">{noDate.length}</span>
-            <span className="muted tiny group-note">waiting for {who === 'me' || who === 'byme' ? 'them' : 'the owner'} to pick a date</span></h2>
+          <h2>No date <span className="count">{noDate.length}</span>
+            <span className="muted tiny group-note">drag them onto the calendar when you're ready{noDate.some(t => !t.acknowledged_at) ? ' · some wait for their owner to pick' : ''}</span></h2>
           <div className="list">{noDate.map(t => <UndatedRow key={t.id} t={t} />)}</div>
         </section>
       )}

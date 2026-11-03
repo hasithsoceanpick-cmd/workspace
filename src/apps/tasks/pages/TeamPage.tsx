@@ -70,7 +70,7 @@ function Board({ params }: { params: Params }) {
     const helping = showHelping ? tasks.filter(t => t.assignee_id !== p.id && keep(t) && helpersOf(t.id).includes(p.id)).sort(order) : [];
     const allOpen = tasks.filter(t => t.assignee_id === p.id && !finished(t));
     // given without a deadline: waiting for this person's date (not part of "overdue / within 7 days")
-    const noDate = params.show ? [] : undated.filter(t => t.assignee_id === p.id);
+    const noDate = params.show ? [] : undated.filter(t => t.assignee_id === p.id && !finished(t));
     return {
       p, own, helping, noDate,
       open: allOpen.length,
@@ -130,7 +130,7 @@ function Board({ params }: { params: Params }) {
       <AssignedBy t={t} />
       <div className="bcard-title">{t.title}</div>
       <div className="bcard-meta">
-        <span className="pill no-date">No date yet{t.latest_by ? ` · by ${fmtDay(t.latest_by)}` : ''}</span>
+        <span className="pill no-date">{!t.acknowledged_at && t.created_by !== t.assignee_id ? `No date yet${t.latest_by ? ` · by ${fmtDay(t.latest_by)}` : ''}` : 'No date'}</span>
         {t.priority === 'high' && <span className="pill high">High</span>}
       </div>
     </div>
@@ -142,7 +142,7 @@ function Board({ params }: { params: Params }) {
       <div className="board-sum muted small">
         {totalOpen} open task{totalOpen === 1 ? '' : 's'} across {team.length} {team.length === 1 ? 'person' : 'people'}
         {totalLate > 0 && <> · <span className="danger strong">{totalLate} overdue</span></>}
-        {totalNoDate > 0 && <> · <span className="strong">{totalNoDate} waiting for a date</span></>}
+        {totalNoDate > 0 && <> · <span className="strong">{totalNoDate} with no date</span></>}
       </div>
       <div className="board">
         {columns.map(c => (
@@ -166,7 +166,7 @@ function Board({ params }: { params: Params }) {
             </div>
             <div className="bcol-body">
               {c.own.length === 0 && c.helping.length === 0 && c.noDate.length === 0 && <div className="bcol-empty">Nothing here</div>}
-              {c.noDate.length > 0 && <div className="bcol-sub">No date yet</div>}
+              {c.noDate.length > 0 && <div className="bcol-sub">No date</div>}
               {c.noDate.map(t => undatedCard(t))}
               {c.noDate.length > 0 && c.own.length > 0 && <div className="bcol-sub">Dated</div>}
               {c.own.map(t => card(t))}
@@ -198,7 +198,7 @@ function TeamTable() {
       today: open.filter(t => t.due_date === td).length,
       week: open.filter(t => t.due_date >= td && t.due_date <= weekEnd).length,
       moved: open.filter(t => t.due_moves > 0).length,
-      noDate: undated.filter(t => t.assignee_id === p.id).length,
+      noDate: undated.filter(t => t.assignee_id === p.id && !finished(t)).length,
       doneToday: doneDays.filter(d => d === td).length,
       doneWeek: doneDays.filter(d => d >= weekStart).length,
     };
@@ -216,7 +216,7 @@ function TeamTable() {
               <th className="num">Overdue</th>
               <th className="num">Due today</th>
               <th className="num">Due this week</th>
-              <th className="num">No date yet</th>
+              <th className="num">No date</th>
               <th className="num">Deadline moved</th>
               <th className="num">Done today</th>
               <th className="num">Done this week</th>

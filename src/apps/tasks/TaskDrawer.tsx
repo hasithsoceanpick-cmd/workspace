@@ -108,7 +108,7 @@ export default function TaskDrawer() {
 
   useEffect(() => {
     if (!isNew || form.due_date !== null) return;
-    if (form.assignee_id === me.id || kind === 'project' || form.repeat) setForm(f => ({ ...f, due_date: today(), latest_by: null }));
+    if (kind === 'project' || form.repeat) setForm(f => ({ ...f, due_date: today(), latest_by: null }));
   }, [isNew, form.due_date, form.assignee_id, form.repeat, kind, me.id]);
 
   useEffect(() => {
@@ -256,17 +256,21 @@ export default function TaskDrawer() {
 
   const onTitleKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); if (isNew) save(); } };
   const overdue = !!task && hasDate(task) && isLate(task, today());
-  // work given without a deadline: whoever gives it may leave the date to the owner (not for projects or repeats)
+  // no date: my own task ("No date" — on the calendar's No date list), or work I give whose owner picks the date.
+  // Taking a date off later: whoever made the task, or the giver / a manager (the database checks it too).
   const openAllowed = !readOnly && form.nature !== 'project' && kind !== 'project' && !form.repeat && (isNew
-    ? form.assignee_id !== me.id
-    : !!task && !task.acknowledged_at && task.created_by !== form.assignee_id && canCheck(task));
+    || (!!task && !finished(task) && (task.created_by === me.id || canCheck(task))));
   const pickingMine = !!task && !task.due_date && task.assignee_id === me.id;   // I'm the owner and pick the date
   const ownerPicks = form.due_date === null;
+  const ownerFirst = firstName(person(form.assignee_id)?.full_name ?? '');
+  // given to someone else and not accepted yet: they pick the date on Got it
+  const theyPick = form.assignee_id !== me.id && (isNew || (!!task && !task.acknowledged_at && task.created_by !== form.assignee_id));
+  const noDateText = form.assignee_id === me.id ? 'No date — put it on the calendar when you\'re ready'
+    : theyPick ? `No date yet — ${ownerFirst} picks it` : 'No date — on the calendar\'s No date list';
   const givenToOther = isNew ? form.assignee_id !== me.id : !!task && !!task.created_by && task.created_by !== form.assignee_id;
   const mayChangeCheck = isNew || (!!task && canCheck(task));
   // daily updates: whoever gave it, or a manager; the owner only on a task they made themselves
   const mayChangeDaily = isNew || (!!task && (task.created_by === me.id || canCheck(task)));
-  const ownerFirst = firstName(person(form.assignee_id)?.full_name ?? '');
   const writesDaily = !!task && task.daily_update && task.assignee_id === me.id && !finished(task);
   const postedToday = !!task && updatePosted(task.id, today());
   const checker = task ? checkerOf(task) : undefined;
@@ -417,17 +421,17 @@ export default function TaskDrawer() {
             <em className={overdue ? 'danger' : 'muted'}>· {overdue ? `${daysBetween(task.due_date, today())}d overdue` : fmtDue(task.due_date)}</em>
           )}</span>
           {ownerPicks && !pickingMine ? (
-            <div className="static-field no-date" title="The owner picks the date when they press Got it">No date yet — {form.assignee_id === me.id ? 'you pick' : `${ownerFirst} picks`} it</div>
+            <div className="static-field no-date" title={theyPick ? 'The owner picks the date when they press Got it' : 'Drag it onto the calendar to give it a date'}>{noDateText}</div>
           ) : (
             <input type="date" value={form.due_date ?? ''} aria-label={isProject ? 'End date' : 'Deadline'}
               min={pickingMine ? today() : undefined} max={pickingMine ? task?.latest_by ?? undefined : undefined}
-              onChange={e => set('due_date', e.target.value || (pickingMine ? null : form.due_date))} required disabled={readOnly} />
+              onChange={e => set('due_date', e.target.value || (pickingMine || openAllowed ? null : form.due_date))} required={!openAllowed && !pickingMine} disabled={readOnly} />
           )}
           {openAllowed && (
             <label className="check-label let-pick">
               <input type="checkbox" checked={ownerPicks}
                 onChange={e => setForm(f => ({ ...f, due_date: e.target.checked ? null : (task?.due_date ?? today()), latest_by: e.target.checked ? f.latest_by ?? null : null }))} />
-              {ownerFirst || 'They'} pick{form.assignee_id === me.id ? '' : 's'} the date
+              {form.assignee_id === me.id ? 'No date' : theyPick ? `${ownerFirst || 'They'} picks the date` : 'No date'}
             </label>
           )}
         </div>
@@ -439,7 +443,7 @@ export default function TaskDrawer() {
         </label>
       </div>
 
-      {ownerPicks && !pickingMine && (
+      {ownerPicks && !pickingMine && theyPick && (
         <div className="latest-row">
           {openAllowed ? (
             <label className="field">

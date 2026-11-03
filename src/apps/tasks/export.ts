@@ -41,7 +41,9 @@ export async function exportTasks(opts: {
         ? Math.round((Date.parse(td) - Date.parse(t.due_date)) / 86400000) : null;
       // given without a deadline and not dated yet: the owner picks it
       const status = hasDate(t) ? statusLabel(t.status)
-        : `No date yet — owner picks${t.latest_by ? ` (by ${t.latest_by.split('-').reverse().join('/')})` : ''}`;
+        : !t.acknowledged_at && t.created_by !== t.assignee_id
+          ? `No date yet — owner picks${t.latest_by ? ` (by ${t.latest_by.split('-').reverse().join('/')})` : ''}`
+          : `${statusLabel(t.status)} — no date`;
       return [
         t.id, t.title, name(t.assignee_id), outside(t.contact_id), helpersOf(t.id).map(name).join(', '), status,
         t.priority[0].toUpperCase() + t.priority.slice(1), xDate(t.due_date), xDate(t.original_due ?? t.due_date),

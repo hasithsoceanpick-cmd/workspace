@@ -90,25 +90,47 @@ export default function TaskRow({ t, showWho }: { t: Task; showWho: boolean }) {
   );
 }
 
-/** Work given without a deadline, waiting for its owner to pick a date (shown to whoever gave it, and managers). */
+/**
+ * A task with no date: on No date (yours, or one moved there), or given without a deadline and waiting for its owner
+ * to pick one on Got it.
+ */
 export function UndatedRow({ t, showWho = true }: { t: UndatedTask; showWho?: boolean }) {
-  const { openTask, person, me } = useTaskApp();
+  const { openTask, person, me, helperOnly, updateTask, toast, progressOf } = useTaskApp();
   const who = person(t.assignee_id);
-  const name = t.assignee_id === me.id ? 'You' : firstName(who?.full_name ?? '');
+  const mine = t.assignee_id === me.id;
+  const name = mine ? 'You' : firstName(who?.full_name ?? '');
+  // given to someone and not accepted yet: they pick the date when they press Got it
+  const waiting = !t.acknowledged_at && t.created_by !== t.assignee_id;
+  const prog = progressOf(t.id);
+  async function finish(e: MouseEvent) {
+    e.stopPropagation();
+    const r = await updateTask(t.id, { status: 'done' });
+    if (r) toast(r.status === 'review' ? 'Sent for sign-off' : 'Marked done');
+  }
   return (
-    <div className="task-row undated" onClick={() => openTask(t.id)} role="button" tabIndex={0}
+    <div className={`task-row undated ${waiting ? 'waiting-date' : ''}`} onClick={() => openTask(t.id)} role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === 'Enter') openTask(t.id); }}>
-      <span className="check locked" aria-hidden title="No date yet" />
+      {waiting || helperOnly(t)
+        ? <span className="check locked" aria-hidden title={waiting ? 'Waiting for a date' : 'Only the owner can mark this done'} />
+        : (
+          <button className="check" onClick={finish} aria-label="Mark done" title="Mark done">
+            <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+        )}
       <div className="tr-main">
         <AssignedBy t={t} />
         <OutsideWith t={t} />
         <div className="tr-title">{t.title}</div>
         <div className="tr-meta">
-          <span className="pill no-date" title={`${name} pick${t.assignee_id === me.id ? '' : 's'} the date when ${t.assignee_id === me.id ? 'you press' : 'they press'} Got it`}>
-            No date yet{t.latest_by ? ` · by ${fmtDay(t.latest_by)}` : ''}
-          </span>
-          {t.assignee_id !== me.id && <span className="pill unseen">Not opened yet</span>}
+          {waiting ? (
+            <span className="pill no-date" title={`${name} pick${mine ? '' : 's'} the date when ${mine ? 'you press' : 'they press'} Got it`}>
+              No date yet{t.latest_by ? ` · by ${fmtDay(t.latest_by)}` : ''}
+            </span>
+          ) : <span className="pill no-date" title="Drag it onto the calendar to give it a date">No date</span>}
+          {waiting && !mine && <span className="pill unseen">Not opened yet</span>}
+          {(t.status === 'doing' || t.status === 'waiting') && <span className={`pill s-${t.status}`}>{statusLabel(t.status)}</span>}
           {t.priority === 'high' && <span className="pill high">High</span>}
+          {prog && <span className="pill prog">☑ {prog.done}/{prog.total}</span>}
           {t.notes && <span className="muted" title="Has notes">≡</span>}
         </div>
       </div>
@@ -118,7 +140,7 @@ export function UndatedRow({ t, showWho = true }: { t: UndatedTask; showWho?: bo
           <span className="hide-sm">{firstName(who?.full_name ?? '')}</span>
         </span>
       )}
-      <span className="tr-due muted">{name} pick{t.assignee_id === me.id ? '' : 's'}</span>
+      <span className="tr-due muted">{waiting ? `${name} pick${mine ? '' : 's'}` : t.due_moves > 0 && t.original_due ? <s className="was" title="First deadline">{fmtDue(t.original_due)}</s> : ''}</span>
     </div>
   );
 }
